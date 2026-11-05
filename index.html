@@ -2095,19 +2095,30 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             for (k = 0; k < n; k++) sm[k] = (p[Math.max(0, k - 1)] + 2 * p[k] + p[Math.min(n - 1, k + 1)]) / 4;
             return sm;
           }
-          function peak(p) { // index of the strongest peak, or -1 when it is not > 1.6x the band median
-            var srt = Array.prototype.slice.call(p).sort(function (m, n) { return m - n; }), med = srt[srt.length >> 1], bi = 0;
-            for (var k = 1; k < p.length; k++) if (p[k] > p[bi]) bi = k;
-            return p[bi] > 1.6 * Math.max(med, 0.5) ? bi : -1;
+          function peak(p, fromEnd) { // the OUTERMOST local peak > 2.0x the band median (nearest the image border), or -1
+            var srt = Array.prototype.slice.call(p).sort(function (m, n) { return m - n; }), thr = 2.0 * Math.max(srt[srt.length >> 1], 0.5), n = p.length, j, k;
+            for (j = 0; j < n; j++) {
+              k = fromEnd ? n - 1 - j : j;
+              if (p[k] > thr && p[k] >= (k > 0 ? p[k - 1] : 0) && p[k] >= (k < n - 1 ? p[k + 1] : 0)) return k;
+            }
+            return -1;
           }
-          var bx = Math.max(3, Math.round(w * 0.18)), by = Math.max(3, Math.round(h * 0.18)), k;
+          function sd(x0, x1, y0, y1) { // luminance std dev over [x0,x1) x [y0,y1)
+            var s1 = 0, s2 = 0, n = 0, xx, yy, v;
+            for (yy = Math.max(0, y0); yy < Math.min(h, y1); yy++) for (xx = Math.max(0, x0); xx < Math.min(w, x1); xx++) { v = g[yy * w + xx]; s1 += v; s2 += v * v; n++; }
+            if (!n) return 0;
+            var mu = s1 / n; return Math.sqrt(Math.max(0, s2 / n - mu * mu));
+          }
+          var bx = Math.max(3, Math.round(w * 0.08)), by = Math.max(3, Math.round(h * 0.08)), k, v, SD = 18;
+          var mx0 = Math.floor(w * 0.1), mx1 = Math.ceil(w * 0.9), my0 = Math.floor(h * 0.1), my1 = Math.ceil(h * 0.9);
           var L = 0, R = w, T = 0, B = h;
-          k = peak(prof(true, 0, bx)); if (k >= 0) L = k + 1 + 1; // edge between k and k+O, then 1px inward
-          k = peak(prof(true, w - bx - O, w - O)); if (k >= 0) R = (w - bx - O) + k + 1 - 1;
-          k = peak(prof(false, 0, by)); if (k >= 0) T = k + 1 + 1;
-          k = peak(prof(false, h - by - O, h - O)); if (k >= 0) B = (h - by - O) + k + 1 - 1;
-          if (R - L < w * 0.5) { L = 0; R = w; } // safety: never cut away most of the card
-          if (B - T < h * 0.5) { T = 0; B = h; }
+          // accept a side only when the strip outside the line is plain background, not card content
+          k = peak(prof(true, 0, bx), false); if (k >= 0 && sd(0, k + 1, my0, my1) < SD) L = k + 1 + 1; // edge between k and k+O, then 1px inward
+          k = peak(prof(true, w - bx - O, w - O), true); v = w - bx - O + k; if (k >= 0 && sd(v + O, w, my0, my1) < SD) R = v + 1 - 1;
+          k = peak(prof(false, 0, by), false); if (k >= 0 && sd(mx0, mx1, 0, k + 1) < SD) T = k + 1 + 1;
+          k = peak(prof(false, h - by - O, h - O), true); v = h - by - O + k; if (k >= 0 && sd(mx0, mx1, v + O, h) < SD) B = v + 1 - 1;
+          var cx = Math.floor(w * 0.06), cy = Math.floor(h * 0.06); // hard cap: at most 6% per side
+          L = Math.min(L, cx); R = Math.max(R, w - cx); T = Math.min(T, cy); B = Math.max(B, h - cy);
           return { l: Math.round(L / s), t: Math.round(T / s), r: Math.round((w - R) / s), b: Math.round((h - B) / s) };
         }
         function trimmed(it) { // auto trim (cached per proc canvas) + equal manual inset
@@ -2116,9 +2127,15 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             it.trimFor = it.proc;
           }
           var src = it.proc, W = src.width, H = src.height, a = it.autoEdge !== false ? it.trim : { l: 0, t: 0, r: 0, b: 0 };
-          var x0 = a.l, y0 = a.t, w = W - a.l - a.r, h = H - a.t - a.b, m = (it.inset || 0) / 100;
-          var ix = Math.round(w * m), iy = Math.round(h * m);
-          x0 += ix; y0 += iy; w -= 2 * ix; h -= 2 * iy;
+          var m = (it.inset || 0) / 100, l = a.l, t = a.t, r = a.r, b = a.b;
+          if (m >= 0) { // cut more, equally on every side
+            var ix = Math.round((W - l - r) * m), iy = Math.round((H - t - b) * m);
+            l += ix; r += ix; t += iy; b += iy;
+          } else { // undo part of the auto trim, never past the warped image
+            var ex = Math.round(W * -m), ey = Math.round(H * -m);
+            l = Math.max(0, l - ex); r = Math.max(0, r - ex); t = Math.max(0, t - ey); b = Math.max(0, b - ey);
+          }
+          var x0 = l, y0 = t, w = W - l - r, h = H - t - b;
           if (w < 8 || h < 8 || (x0 === 0 && y0 === 0 && w === W && h === H)) return src;
           var c = cnv(w, h); c.getContext("2d").drawImage(src, x0, y0, w, h, 0, 0, w, h);
           return c;
@@ -2137,7 +2154,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             '<p class="x-status" role="status"></p><p class="x-status x-ocr" aria-live="polite"></p>' +
             '<div class="x-row"><select aria-label="Document type">' + TYPES.map(function (t) { return "<option>" + t + "</option>"; }).join("") + "</select>" +
             '<label>Pair no. <input type="number" min="1" step="1" value="1" /></label></div>' +
-            '<div class="x-trim" hidden><label>Kinara kaatein <input type="range" data-k="inset" min="0" max="12" step="0.5" value="0" aria-label="Kinara kaatein, har taraf se pratishat" /><output>0%</output></label>' +
+            '<div class="x-trim" hidden><label>Kinara kaatein <input type="range" data-k="inset" min="-6" max="12" step="0.5" value="0" aria-label="Kinara kaatein, har taraf se pratishat" /><output>0%</output></label>' +
             '<label><input type="checkbox" data-k="auto" checked /> Auto kinara</label></div>' +
             '<div class="x-opts"><button class="x-opt" type="button" data-a="rot">Ghumayein 90°</button>' +
             '<button class="x-opt" type="button" data-a="cx">Kone theek karein</button>' +
