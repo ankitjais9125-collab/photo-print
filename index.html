@@ -1020,6 +1020,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           <div id="docOut" hidden>
             <div class="x-opts">
               <button class="x-opt" type="button" id="docBorder" aria-pressed="true">Card ke around grey border</button>
+              <button class="x-opt" type="button" id="docFill" aria-pressed="true">Card pura box bhare</button>
               <button class="btn x-primary" type="button" id="docPdf">PDF download</button>
             </div>
             <div class="x-pages" id="docPages"></div>
@@ -1816,7 +1817,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         var K = 300 / 25.4, PW = 2480, PH = 3508, CW = 1011, CH = 638;
         var MG = Math.round(10 * K), GX = Math.round(5 * K), GY = Math.round(8 * K), FM = Math.round(8 * K);
         var TYPES = ["Aadhaar Front", "Aadhaar Back", "PAN / ID card (ek side)", "Full page"];
-        var items = [], seq = 0, cardN = 0, border = true, urls = [], timer = null;
+        var items = [], seq = 0, cardN = 0, border = true, fill = true, urls = [], timer = null;
         function err(e) { return (e && e.message) || String(e); }
         function msg(t, bad) { var e = $("docStatus"); e.textContent = t; e.classList.toggle("is-err", !!bad); }
         function tick() { return new Promise(function (r) { setTimeout(r, 0); }); }
@@ -2199,9 +2200,10 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
 
         // ---------- A4 layout ----------
         function page() { var c = cnv(PW, PH), x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, PW, PH); return c; }
-        function put(x, s, X, Y, W, H, b) {
-          var k = Math.min(W / s.width, H / s.height), w = s.width * k, h = s.height * k;
-          x.imageSmoothingQuality = "high"; x.drawImage(s, X + (W - w) / 2, Y + (H - h) / 2, w, h);
+        function put(x, s, X, Y, W, H, b, f) {
+          x.imageSmoothingQuality = "high";
+          if (f) x.drawImage(s, X, Y, W, H);
+          else { var k = Math.min(W / s.width, H / s.height), w = s.width * k, h = s.height * k; x.drawImage(s, X + (W - w) / 2, Y + (H - h) / 2, w, h); }
           if (b) { x.strokeStyle = "#999"; x.lineWidth = 1; x.strokeRect(X + 0.5, Y + 0.5, W - 1, H - 1); }
         }
         function later() { clearTimeout(timer); timer = setTimeout(layout, 250); }
@@ -2220,7 +2222,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           rows.forEach(function (r, n) {
             if (n % per === 0) pg.push(page());
             var x = pg[pg.length - 1].getContext("2d"), y = MG + (n % per) * (CH + GY);
-            r.forEach(function (it, j) { put(x, it.out, x0 + j * (CW + GX), y, CW, CH, border); });
+            r.forEach(function (it, j) { put(x, it.out, x0 + j * (CW + GX), y, CW, CH, border, fill); });
           });
           ok.filter(function (it) { return !isCard(it.type); }).forEach(function (it) {
             var c = page(); put(c.getContext("2d"), it.out, FM, FM, PW - 2 * FM, PH - 2 * FM, false); pg.push(c);
@@ -2242,6 +2244,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         ["dragleave", "drop"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("is-over"); }); });
         drop.addEventListener("drop", function (e) { if (e.dataTransfer) add(e.dataTransfer.files); });
         $("docBorder").addEventListener("click", function () { border = !border; this.setAttribute("aria-pressed", String(border)); layout(); });
+        $("docFill").addEventListener("click", function () { fill = !fill; this.setAttribute("aria-pressed", String(fill)); layout(); });
         $("docPdf").addEventListener("click", async function () {
           if (!urls.length) { msg("Pehle document daalein.", true); return; }
           var b = this; b.classList.add("x-btn-busy");
