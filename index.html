@@ -1359,6 +1359,49 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           } catch (e) { console.error(e); aiSay("AI load nahi hua", true); return c; }
           finally { btn.disabled = false; }
         }
+        // ---------- GFPGAN face restoration (onnxruntime-web, lazy, cached) ----------
+        var GFP = "https://huggingface.co/opiumuseless/gfpgan-v1.4-w16/resolve/main/GFPGANv1.4-w16.onnx", gfpP = null;
+        async function gfpModel() {
+          var cache = await caches.open("ai-models"), hit = await cache.match(GFP);
+          if (hit) return new Uint8Array(await hit.arrayBuffer());
+          var r = await fetch(GFP); if (!r.ok) throw new Error("model " + r.status);
+          var tot = +r.headers.get("content-length") || 170e6, got = 0, parts = [], rd = r.body.getReader();
+          for (;;) { var x = await rd.read(); if (x.done) break; parts.push(x.value); got += x.value.length; aiSay("AI model download: " + Math.min(99, Math.round(got / tot * 100)) + "%"); }
+          var buf = new Uint8Array(got), o = 0; parts.forEach(function (p) { buf.set(p, o); o += p.length; });
+          aiSay("AI model download: 100%");
+          try { await cache.put(GFP, new Response(buf, { headers: { "content-type": "application/octet-stream" } })); } catch (e) { console.warn(e); }
+          return buf;
+        }
+        function getGfp() {
+          if (!gfpP) { gfpP = (async function () { if (!window.ort) await addJs("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.0/dist/ort.webgpu.min.js"); return ort.InferenceSession.create(await gfpModel(), { executionProviders: ["webgpu", "wasm"] }); })(); gfpP.catch(function () { gfpP = null; }); }
+          return gfpP;
+        }
+        async function aiFace(c) {
+          var btn = $("aiClear"); btn.disabled = true;
+          try {
+            var ses = await getGfp();
+            aiSay("Chehra saaf ho raha hai..."); say("Chehra saaf ho raha hai...");
+            var V = await getVision(), fl = await V.mp.FaceLandmarker.createFromOptions(V.vision, { baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task" }, runningMode: "IMAGE", numFaces: 1 });
+            var r = fl.detect(c); fl.close && fl.close();
+            var L = r.faceLandmarks && r.faceLandmarks[0]; if (!L) { aiSay(""); return c; }
+            var W = c.width, H = c.height, ax = L[33].x * W, ay = L[33].y * H, bx = L[263].x * W, by = L[263].y * H;
+            var S = 4.2 * Math.hypot(bx - ax, by - ay), sx = (ax + bx) / 2 - S / 2, sy = (ay + by) / 2 - 0.38 * S, N = 512, P = N * N;
+            var f = canvas(N, N), fx = f.getContext("2d");
+            fx.fillStyle = "#ffffff"; fx.fillRect(0, 0, N, N); fx.imageSmoothingQuality = "high"; fx.drawImage(c, sx, sy, S, S, 0, 0, N, N);
+            var px = fx.getImageData(0, 0, N, N), d = px.data, inp = new Float32Array(3 * P);
+            for (var i = 0; i < P; i++) for (var k = 0; k < 3; k++) inp[k * P + i] = d[i * 4 + k] / 127.5 - 1;
+            var feeds = {}; feeds[ses.inputNames[0]] = new ort.Tensor("float32", inp, [1, 3, N, N]);
+            var out = (await ses.run(feeds))[ses.outputNames[0]], od = out.data;
+            for (i = 0; i < P; i++) { for (k = 0; k < 3; k++) d[i * 4 + k] = (Math.max(-1, Math.min(1, od[k * P + i])) + 1) * 127.5; d[i * 4 + 3] = 255; }
+            fx.putImageData(px, 0, 0); out.dispose && out.dispose();
+            var m = canvas(N, N), mx = m.getContext("2d"), e = 0.12 * N;
+            mx.filter = "blur(" + Math.round(e / 2) + "px)"; mx.fillStyle = "#000"; mx.beginPath(); mx.ellipse(N / 2, N / 2, N / 2 - e, N / 2 - e, 0, 0, 2 * Math.PI); mx.fill();
+            mx.filter = "none"; mx.globalCompositeOperation = "source-in"; mx.drawImage(f, 0, 0);
+            var o = canvas(W, H), ox = o.getContext("2d"); ox.drawImage(c, 0, 0); ox.imageSmoothingQuality = "high"; ox.drawImage(m, 0, 0, N, N, sx, sy, S, S);
+            aiSay(""); return o;
+          } catch (e) { console.error(e); aiSay("AI load nahi hua", true); return c; }
+          finally { btn.disabled = false; }
+        }
         $("aiClear").addEventListener("click", function () {
           st.ai = !st.ai; this.setAttribute("aria-pressed", String(st.ai));
           if (!st.raw) return;
@@ -1374,7 +1417,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           ["bg", "face", "enh"].forEach(function (k) { task(k, "Baaki"); });
           st.alpha = null; st.oldBg = null; st.auto = null; st.face = null; st.aC = null;
           st.src = straighten();
-          if (st.ai) st.src = await aiUp(st.src);
+          if (st.ai) { st.src = await aiUp(st.src); st.src = await aiFace(st.src); }
 
           // background removal: MediaPipe multiclass -> selfie segmenter -> imgly
           task("bg", "Chal raha hai", true);
