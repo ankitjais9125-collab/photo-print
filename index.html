@@ -928,6 +928,8 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
                 <h3>Seedha</h3>
                 <label><input type="checkbox" id="straight" checked /> Seedha karein</label>
                 <label><input type="checkbox" id="clear" checked /> Clear karein</label>
+                <div class="x-opts"><button class="x-opt" type="button" id="aiClear" aria-pressed="false">AI Clear</button></div>
+                <p class="x-status" id="aiSay" role="status" aria-live="polite"></p>
                 <label>Tilt <input type="range" id="tilt" min="-15" max="15" step="0.5" value="0" /><output id="tiltVal">0°</output></label>
               </div>
               <div>
@@ -1277,6 +1279,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           if (busy) return; busy = true;
           $("tasks").hidden = false;
           ["load", "bg", "face", "enh"].forEach(function (k) { task(k, "Baaki"); });
+          st.ai = false; $("aiClear").setAttribute("aria-pressed", "false"); aiSay("");
           try {
             task("load", "Chal raha hai", true); say("Photo load ho rahi hai...");
             var img = await loadImg(file);
@@ -1324,6 +1327,45 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           if (busy) { again = true; return; }
           busy = true; process(false);
         }
+        // ---------- AI Clear (ESRGAN 2x on the face region, lazy-loaded) ----------
+        var AI_JS = ["https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js", "https://cdn.jsdelivr.net/npm/upscaler@1.0.0/dist/browser/umd/upscaler.min.js", "https://cdn.jsdelivr.net/npm/@upscalerjs/esrgan-slim@1.0.0/dist/umd/models/esrgan-slim/src/x2/index.min.js"];
+        var upP = null;
+        function aiSay(t, err) { var e = $("aiSay"); e.textContent = t; e.classList.toggle("is-err", !!err); }
+        function addJs(u) { return new Promise(function (ok, bad) { var s = document.createElement("script"); s.src = u; s.onload = ok; s.onerror = function () { bad(new Error(u)); }; document.head.appendChild(s); }); }
+        function getUp() {
+          if (!upP) { upP = (async function () { for (var i = 0; i < AI_JS.length; i++) await addJs(AI_JS[i]); return new Upscaler({ model: ESRGANSlim2x }); })(); upP.catch(function () { upP = null; }); }
+          return upP;
+        }
+        async function aiUp(c) {
+          var btn = $("aiClear"); btn.disabled = true; aiSay("AI se saaf ho raha hai..."); say("AI se saaf ho raha hai...");
+          try {
+            var up = await getUp(), W = c.width, H = c.height, bb = null;
+            try {
+              var V = await getVision(), det = await V.mp.FaceDetector.createFromOptions(V.vision, { baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite" }, runningMode: "IMAGE" });
+              var ds = det.detect(c).detections || []; det.close && det.close();
+              ds.sort(function (a, b) { return b.boundingBox.width * b.boundingBox.height - a.boundingBox.width * a.boundingBox.height; });
+              bb = ds[0] && ds[0].boundingBox;
+            } catch (e) { console.warn(e); }
+            var x0 = 0, y0 = 0, x1 = W, y1 = H;
+            if (bb) { x0 = Math.max(0, bb.originX - 1.1 * bb.width); x1 = Math.min(W, bb.originX + 2.1 * bb.width); y0 = Math.max(0, bb.originY - 1.1 * bb.height); y1 = Math.min(H, bb.originY + 2.2 * bb.height); }
+            var rw = x1 - x0, rh = y1 - y0, k = Math.min(1, 400 / Math.max(rw, rh));
+            var reg = canvas(Math.round(rw * k), Math.round(rh * k)), rx = reg.getContext("2d");
+            rx.imageSmoothingQuality = "high"; rx.drawImage(c, x0, y0, rw, rh, 0, 0, reg.width, reg.height);
+            var uri = await up.upscale(reg, { output: "base64", patchSize: 64, padding: 4 });
+            if (!/^data:/.test(uri)) uri = "data:image/png;base64," + uri;
+            var im = await new Promise(function (ok, bad) { var i = new Image(); i.onload = function () { ok(i); }; i.onerror = bad; i.src = uri; });
+            var o = canvas(im.naturalWidth, im.naturalHeight); o.getContext("2d").drawImage(im, 0, 0);
+            aiSay(""); return o;
+          } catch (e) { console.error(e); aiSay("AI load nahi hua", true); return c; }
+          finally { btn.disabled = false; }
+        }
+        $("aiClear").addEventListener("click", function () {
+          st.ai = !st.ai; this.setAttribute("aria-pressed", String(st.ai));
+          if (!st.raw) return;
+          if (busy) { again = true; return; }
+          busy = true; process(false);
+        });
+
         $("straight").addEventListener("change", restraighten);
         $("tilt").addEventListener("change", restraighten);
         $("tilt").addEventListener("input", function () { $("tiltVal").textContent = $("tilt").value + "°"; });
@@ -1332,6 +1374,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           ["bg", "face", "enh"].forEach(function (k) { task(k, "Baaki"); });
           st.alpha = null; st.oldBg = null; st.auto = null; st.face = null; st.aC = null;
           st.src = straighten();
+          if (st.ai) st.src = await aiUp(st.src);
 
           // background removal: MediaPipe multiclass -> selfie segmenter -> imgly
           task("bg", "Chal raha hai", true);
