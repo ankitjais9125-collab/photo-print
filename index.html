@@ -2035,9 +2035,16 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         }
         function autoCrop(src) { // {q, c, ok}
           var q = null, c = null;
-          try { q = detectQuad(src); if (q) c = warp(src, q); } catch (e) { console.warn(e); q = null; }
+          try { q = detectQuad(src); if (q) { q = padQuad(q, src.width, src.height); c = warp(src, q); } } catch (e) { console.warn(e); q = null; }
           if (!q) { q = fullQuad(src); c = src; return { q: q, c: c, ok: false }; }
           return { q: q, c: c, ok: true };
+        }
+        function padQuad(q, W, H) { // push the top edge out 3% of card height, the other edges 1%, clamped to the image
+          var tl = q[0], tr = q[1], br = q[2], bl = q[3], T = 0.03, S = 0.01;
+          var mv = function (p, a, fa, b, fb) { // p + fa*(p-a) + fb*(p-b)
+            return { x: Math.min(W, Math.max(0, p.x + fa * (p.x - a.x) + fb * (p.x - b.x))), y: Math.min(H, Math.max(0, p.y + fa * (p.y - a.y) + fb * (p.y - b.y))) };
+          };
+          return [mv(tl, bl, T, tr, S), mv(tr, br, T, tl, S), mv(br, tr, S, bl, S), mv(bl, tl, S, br, S)];
         }
         function rotPt(p, H) { return { x: H - p.y, y: p.x }; } // 90° clockwise in an image of height H
         function rotItem(it) { // rotate processed canvas, source and corners by 90° clockwise
@@ -2119,7 +2126,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           k = peak(prof(false, h - by - O, h - O), true); v = h - by - O + k; if (k >= 0 && sd(mx0, mx1, v + O, h) < SD) B = v + 1 - 1;
           var cx = Math.floor(w * 0.06), cy = Math.floor(h * 0.06); // hard cap: at most 6% per side
           L = Math.min(L, cx); R = Math.max(R, w - cx); T = Math.min(T, cy); B = Math.max(B, h - cy);
-          return { l: Math.round(L / s), t: Math.round(T / s), r: Math.round((w - R) / s), b: Math.round((h - B) / s) };
+          return { l: Math.round(L / s), t: 0, r: Math.round((w - R) / s), b: Math.round((h - B) / s) }; // top never auto-trimmed (Aadhaar header)
         }
         function trimmed(it) { // auto trim (cached per proc canvas) + equal manual inset
           if (it.trimFor !== it.proc) {
@@ -2135,6 +2142,9 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             var ex = Math.round(W * -m), ey = Math.round(H * -m);
             l = Math.max(0, l - ex); r = Math.max(0, r - ex); t = Math.max(0, t - ey); b = Math.max(0, b - ey);
           }
+          var sd = it.side || {}; // per-side: + cuts, - expands, never past the warped image
+          l = Math.max(0, l + Math.round(W * (sd.l || 0) / 100)); r = Math.max(0, r + Math.round(W * (sd.r || 0) / 100));
+          t = Math.max(0, t + Math.round(H * (sd.t || 0) / 100)); b = Math.max(0, b + Math.round(H * (sd.b || 0) / 100));
           var x0 = l, y0 = t, w = W - l - r, h = H - t - b;
           if (w < 8 || h < 8 || (x0 === 0 && y0 === 0 && w === W && h === H)) return src;
           var c = cnv(w, h); c.getContext("2d").drawImage(src, x0, y0, w, h, 0, 0, w, h);
@@ -2155,6 +2165,9 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             '<div class="x-row"><select aria-label="Document type">' + TYPES.map(function (t) { return "<option>" + t + "</option>"; }).join("") + "</select>" +
             '<label>Pair no. <input type="number" min="1" step="1" value="1" /></label></div>' +
             '<div class="x-trim" hidden><label>Kinara kaatein <input type="range" data-k="inset" min="-6" max="12" step="0.5" value="0" aria-label="Kinara kaatein, har taraf se pratishat" /><output>0%</output></label>' +
+            [["t", "Upar"], ["b", "Neeche"], ["l", "Baayein"], ["r", "Daayein"]].map(function (s) {
+              return '<label class="x-side">' + s[1] + ' <input type="range" data-k="side" data-s="' + s[0] + '" min="-8" max="8" step="0.5" value="0" aria-label="' + s[1] + ' kinara, minus failaye, plus kaate" /><output>0%</output></label>';
+            }).join("") +
             '<label><input type="checkbox" data-k="auto" checked /> Auto kinara</label></div>' +
             '<div class="x-opts"><button class="x-opt" type="button" data-a="rot">Ghumayein 90°</button>' +
             '<button class="x-opt" type="button" data-a="cx">Kone theek karein</button>' +
@@ -2197,6 +2210,13 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             if (it.ready) { render(it); later(); }
             return;
           }
+          if (e.target.dataset.k === "side") {
+            it.side = it.side || {};
+            it.side[e.target.dataset.s] = +e.target.value || 0;
+            e.target.nextElementSibling.textContent = (+e.target.value || 0) + "%";
+            if (it.ready) { render(it); later(); }
+            return;
+          }
           if (e.target.type !== "number") return;
           it.pair = parseInt(e.target.value, 10) || 1; later();
         });
@@ -2206,7 +2226,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           var batch = [], f, it, i;
           for (i = 0; i < files.length; i++) {
             f = files[i];
-            it = { name: f.name, rot: 0, bw: false, pair: 1, type: "Full page", id: ++seq, inset: 0, autoEdge: true, trim: null };
+            it = { name: f.name, rot: 0, bw: false, pair: 1, type: "Full page", id: ++seq, inset: 0, autoEdge: true, trim: null, side: { t: 0, b: 0, l: 0, r: 0 } };
             try { it.src = await loadImg(f); } catch (e) { msg(f.name + ": " + err(e), true); continue; }
             it.el = card(it); items.push(it); batch.push(it);
             $("docList").appendChild(it.el); setSt(it, "Crop + seedha ho raha hai...");
