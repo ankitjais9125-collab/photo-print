@@ -837,6 +837,12 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
       .x-row select, .x-row input { min-height: var(--tap); padding: 0 8px; font: var(--type-small); color: var(--text-primary); background: var(--fill-primary-on); border: 1px solid var(--stroke-primary); border-radius: var(--r-s); }
       .x-row select { flex: 1 1 100%; }
       .x-row input { width: 64px; }
+      .x-trim { display: grid; gap: 4px; font: var(--type-small); color: var(--text-secondary); }
+      .x-trim[hidden] { display: none; }
+      .x-trim label { display: flex; align-items: center; gap: 8px; min-height: var(--tap); }
+      .x-trim input[type="range"] { flex: 1; min-height: var(--tap); accent-color: var(--fill-primary); }
+      .x-trim input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--fill-primary); }
+      .x-trim output { min-width: 3em; text-align: right; color: var(--text-primary); }
       .x-cx { width: min(96vw, 960px); max-width: none; padding: 16px; border: 1px solid var(--stroke-primary); border-radius: var(--r-l); background: var(--fill-primary-on); color: var(--text-primary); }
       .x-cx[open] { display: grid; gap: 12px; justify-items: center; }
       .x-cx::backdrop { background: rgba(0, 0, 0, 0.6); }
@@ -2069,13 +2075,61 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         // ---------- items ----------
         function isCard(t) { return t !== "Full page"; }
         function setSt(it, t, bad) { var e = it.el.querySelector(".x-status"); e.textContent = t; e.classList.toggle("is-err", !!bad); }
+        // ---------- card edge trim (after warp, before enhance) ----------
+        function autoTrim(src) { // {l, t, r, b} in src pixels: where the card's own edge sits
+          var W = src.width, H = src.height, s = 800 / W, w = Math.max(8, Math.round(W * s)), h = Math.max(8, Math.round(H * s));
+          var c = cnv(w, h), x = c.getContext("2d");
+          x.drawImage(src, 0, 0, w, h);
+          var d = x.getImageData(0, 0, w, h).data, g = new Float32Array(w * h), i;
+          for (i = 0; i < w * h; i++) g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+          var O = 2;
+          // profile along one axis within [a, b): mean |I(p+O) - I(p)| over the middle 80% of the other axis
+          function prof(horiz, a, b) {
+            var n = b - a, p = new Float32Array(n), len = horiz ? h : w, q0 = Math.floor(len * 0.1), q1 = Math.ceil(len * 0.9), k, j, v, sum;
+            for (k = 0; k < n; k++) {
+              v = a + k; sum = 0;
+              for (j = q0; j < q1; j++) sum += horiz ? Math.abs(g[j * w + v + O] - g[j * w + v]) : Math.abs(g[(v + O) * w + j] - g[v * w + j]);
+              p[k] = sum / Math.max(1, q1 - q0);
+            }
+            var sm = new Float32Array(n); // slight smoothing [1 2 1]
+            for (k = 0; k < n; k++) sm[k] = (p[Math.max(0, k - 1)] + 2 * p[k] + p[Math.min(n - 1, k + 1)]) / 4;
+            return sm;
+          }
+          function peak(p) { // index of the strongest peak, or -1 when it is not > 1.6x the band median
+            var srt = Array.prototype.slice.call(p).sort(function (m, n) { return m - n; }), med = srt[srt.length >> 1], bi = 0;
+            for (var k = 1; k < p.length; k++) if (p[k] > p[bi]) bi = k;
+            return p[bi] > 1.6 * Math.max(med, 0.5) ? bi : -1;
+          }
+          var bx = Math.max(3, Math.round(w * 0.18)), by = Math.max(3, Math.round(h * 0.18)), k;
+          var L = 0, R = w, T = 0, B = h;
+          k = peak(prof(true, 0, bx)); if (k >= 0) L = k + 1 + 1; // edge between k and k+O, then 1px inward
+          k = peak(prof(true, w - bx - O, w - O)); if (k >= 0) R = (w - bx - O) + k + 1 - 1;
+          k = peak(prof(false, 0, by)); if (k >= 0) T = k + 1 + 1;
+          k = peak(prof(false, h - by - O, h - O)); if (k >= 0) B = (h - by - O) + k + 1 - 1;
+          if (R - L < w * 0.5) { L = 0; R = w; } // safety: never cut away most of the card
+          if (B - T < h * 0.5) { T = 0; B = h; }
+          return { l: Math.round(L / s), t: Math.round(T / s), r: Math.round((w - R) / s), b: Math.round((h - B) / s) };
+        }
+        function trimmed(it) { // auto trim (cached per proc canvas) + equal manual inset
+          if (it.trimFor !== it.proc) {
+            try { it.trim = autoTrim(it.proc); } catch (e) { console.warn(e); it.trim = { l: 0, t: 0, r: 0, b: 0 }; }
+            it.trimFor = it.proc;
+          }
+          var src = it.proc, W = src.width, H = src.height, a = it.autoEdge !== false ? it.trim : { l: 0, t: 0, r: 0, b: 0 };
+          var x0 = a.l, y0 = a.t, w = W - a.l - a.r, h = H - a.t - a.b, m = (it.inset || 0) / 100;
+          var ix = Math.round(w * m), iy = Math.round(h * m);
+          x0 += ix; y0 += iy; w -= 2 * ix; h -= 2 * iy;
+          if (w < 8 || h < 8 || (x0 === 0 && y0 === 0 && w === W && h === H)) return src;
+          var c = cnv(w, h); c.getContext("2d").drawImage(src, x0, y0, w, h, 0, 0, w, h);
+          return c;
+        }
         function render(it) {
-          it.out = enhance(it.proc, it.bw);
+          it.out = enhance(isCard(it.type) ? trimmed(it) : it.proc, it.bw);
           var t = it.el.querySelector("canvas"), s = Math.min(1, 480 / Math.max(it.out.width, it.out.height));
           t.width = Math.round(it.out.width * s); t.height = Math.round(it.out.height * s);
           t.getContext("2d").drawImage(it.out, 0, 0, t.width, t.height);
         }
-        function sync(it) { it.el.querySelector("select").value = it.type; it.el.querySelector("input").value = it.pair; }
+        function sync(it) { it.el.querySelector("select").value = it.type; it.el.querySelector('input[type="number"]').value = it.pair; it.el.querySelector(".x-trim").hidden = !isCard(it.type); }
         function card(it) {
           var el = document.createElement("div");
           el.className = "x-di"; el.dataset.id = it.id;
@@ -2083,6 +2137,8 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             '<p class="x-status" role="status"></p><p class="x-status x-ocr" aria-live="polite"></p>' +
             '<div class="x-row"><select aria-label="Document type">' + TYPES.map(function (t) { return "<option>" + t + "</option>"; }).join("") + "</select>" +
             '<label>Pair no. <input type="number" min="1" step="1" value="1" /></label></div>' +
+            '<div class="x-trim" hidden><label>Kinara kaatein <input type="range" data-k="inset" min="0" max="12" step="0.5" value="0" aria-label="Kinara kaatein, har taraf se pratishat" /><output>0%</output></label>' +
+            '<label><input type="checkbox" data-k="auto" checked /> Auto kinara</label></div>' +
             '<div class="x-opts"><button class="x-opt" type="button" data-a="rot">Ghumayein 90°</button>' +
             '<button class="x-opt" type="button" data-a="cx">Kone theek karein</button>' +
             '<button class="x-opt" type="button" data-a="bw" aria-pressed="false">B&amp;W</button>' +
@@ -2108,13 +2164,23 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           render(it); layout();
         });
         list.addEventListener("change", function (e) {
-          if (e.target.tagName !== "SELECT") return;
           var it = itemOf(e.target); if (!it) return;
-          it.type = e.target.value; if (it.ready) later();
+          if (e.target.dataset.k === "auto") { it.autoEdge = e.target.checked; if (it.ready) { render(it); later(); } return; }
+          if (e.target.tagName !== "SELECT") return;
+          var wasCard = isCard(it.type);
+          it.type = e.target.value; it.el.querySelector(".x-trim").hidden = !isCard(it.type);
+          if (it.ready) { if (wasCard !== isCard(it.type)) render(it); later(); }
         });
         list.addEventListener("input", function (e) {
           if (e.target.tagName !== "INPUT") return;
           var it = itemOf(e.target); if (!it) return;
+          if (e.target.dataset.k === "inset") {
+            it.inset = +e.target.value || 0;
+            e.target.nextElementSibling.textContent = it.inset + "%";
+            if (it.ready) { render(it); later(); }
+            return;
+          }
+          if (e.target.type !== "number") return;
           it.pair = parseInt(e.target.value, 10) || 1; later();
         });
         async function add(files) {
@@ -2123,7 +2189,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           var batch = [], f, it, i;
           for (i = 0; i < files.length; i++) {
             f = files[i];
-            it = { name: f.name, rot: 0, bw: false, pair: 1, type: "Full page", id: ++seq };
+            it = { name: f.name, rot: 0, bw: false, pair: 1, type: "Full page", id: ++seq, inset: 0, autoEdge: true, trim: null };
             try { it.src = await loadImg(f); } catch (e) { msg(f.name + ": " + err(e), true); continue; }
             it.el = card(it); items.push(it); batch.push(it);
             $("docList").appendChild(it.el); setSt(it, "Crop + seedha ho raha hai...");
