@@ -796,6 +796,10 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
       .x-opt:hover { box-shadow: inset 0 0 0 100px var(--hover-wash); }
       .x-opt[aria-pressed="true"] { background: var(--fill-primary); color: var(--text-primary-on); border-color: var(--fill-primary); }
       .x-opt:disabled { opacity: 0.5; cursor: default; }
+      .x-pick { position: relative; }
+      .x-pick input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+      .x-pick:has(input:disabled) { opacity: 0.5; pointer-events: none; }
+      .x-nd input { flex: 1 1 120px; width: auto; }
       .x-sw { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--stroke-primary); }
       .x-range { width: 100%; max-width: 360px; min-height: var(--tap); accent-color: var(--fill-primary); }
       .x-pad { display: grid; grid-template-columns: repeat(3, var(--tap)); gap: 6px; }
@@ -864,6 +868,14 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
       .x-ck { display: inline-flex; align-items: center; gap: 8px; min-height: var(--tap); font: var(--type-small); color: var(--text-primary); }
       .x-ck input { width: 20px; height: 20px; accent-color: var(--fill-primary); }
       .x-fl .x-wide { width: 260px; max-width: 100%; }
+      .x-multi { display: grid; gap: 12px; }
+      .x-multi h3 { font: var(--type-label); color: var(--text-secondary); }
+      .x-sl { display: flex; flex-wrap: wrap; gap: 12px; }
+      .x-si { display: grid; gap: 8px; padding: 8px; border-radius: var(--r-s); background: var(--fill-tertiary); }
+      .x-si canvas { width: 96px; height: 112px; display: block; border-radius: var(--r-s); background: #fff; }
+      .x-si .x-row { flex-wrap: nowrap; }
+      .x-si .x-row input { width: 56px; }
+      .x-si .x-opt { justify-content: center; width: var(--tap); padding: 0; }
       .x-rso { max-width: 100%; max-height: 320px; height: auto; display: block; border: 1px solid var(--stroke-primary); border-radius: var(--r-s); background: #fff; }
     </style>
   </head>
@@ -899,11 +911,12 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             <p class="head__sub">Chehra seedha, aankhen khuli, roshni achhi ho.</p>
           </div>
           <label class="x-drop" id="drop">
-            <input type="file" id="file" accept="image/*" />
+            <input type="file" id="file" accept="image/*" multiple />
             <strong>Photo chunein</strong>
-            <span>Yahan tap karein ya photo drag karke chhodein</span>
+            <span>Yahan tap karein ya photo drag karke chhodein. Kai log? Saari photos ek saath chunein.</span>
           </label>
           <div class="x-bar" id="bar" hidden><span></span></div>
+          <p class="x-status" id="batchSay" role="status" aria-live="polite"></p>
           <p class="x-status" id="status" role="status" aria-live="polite"></p>
           <ul class="checklist" id="tasks" hidden>
             <li data-task="load"><span class="checklist__item">Photo load <small>Full quality, max 4000 px</small></span><span class="chip">Baaki</span></li>
@@ -931,6 +944,9 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
                 <div class="x-opts" id="bgOpts">
                   <button class="x-opt" type="button" data-bg="#ffffff" aria-pressed="true"><span class="x-sw" style="background:#fff"></span>White</button>
                   <button class="x-opt" type="button" data-bg="#87d3f8" aria-pressed="false"><span class="x-sw" style="background:#87d3f8"></span>Light Blue</button>
+                  <button class="x-opt" type="button" data-bg="#d32f2f" aria-pressed="false"><span class="x-sw" style="background:#d32f2f"></span>Red</button>
+                  <button class="x-opt" type="button" data-bg="#c8c8c8" aria-pressed="false"><span class="x-sw" style="background:#c8c8c8"></span>Grey</button>
+                  <label class="x-opt x-pick" data-bg="#ff9800" aria-pressed="false"><span class="x-sw" id="bgSw" style="background:#ff9800"></span>Custom<input type="color" id="bgPick" value="#ff9800" aria-label="Custom background colour" /></label>
                   <button class="x-opt" type="button" data-bg="orig" aria-pressed="false">Original rakhein</button>
                 </div>
               </div>
@@ -963,6 +979,18 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
                   <span class="pill">Copies</span>
                   <button class="x-opt" type="button" data-copies="6" aria-pressed="true">6</button>
                   <button class="x-opt" type="button" data-copies="12" aria-pressed="false">12</button>
+                </div>
+              </div>
+              <div class="x-trim">
+                <h3>Naam aur date</h3>
+                <label><input type="checkbox" id="nd" /> Photo par naam aur date</label>
+                <div class="x-row x-nd">
+                  <input type="text" id="ndName" placeholder="Naam" aria-label="Naam" />
+                  <input type="text" id="ndDate" placeholder="DD-MM-YYYY" aria-label="Date (DD-MM-YYYY)" />
+                </div>
+                <div class="x-opts">
+                  <button class="x-opt" type="button" data-nd="strip" aria-pressed="true">Safed patti</button>
+                  <button class="x-opt" type="button" data-nd="slate" aria-pressed="false">Kaali slate</button>
                 </div>
               </div>
             </div>
@@ -1006,6 +1034,15 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           </div>
           <div class="x-opts">
             <button class="x-opt" type="button" id="origA4" aria-pressed="false">Original ko A4 me bhi rakhein</button>
+          </div>
+          <div class="x-multi">
+            <h3>Kai log ek A4 pe</h3>
+            <div class="x-opts">
+              <button class="x-opt" type="button" id="sheetAdd">Is photo ko sheet mein jodein</button>
+              <button class="x-opt" type="button" id="sheetClear" hidden>Sheet khali karein</button>
+            </div>
+            <div class="x-sl" id="sheetList"></div>
+            <p class="fineprint" id="sheetInfo">Sheet mein photo jodne par A4 par sirf sheet ki photos lagengi, har vyakti ki copies ek saath.</p>
           </div>
           <div class="links">
             <button class="btn x-primary" type="button" id="dlPdf">A4 PDF download (print ke liye)</button>
@@ -1379,17 +1416,31 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
 
         // ---------- upload ----------
         var drop = $("drop");
-        $("file").addEventListener("change", function (e) { if (e.target.files[0]) run(e.target.files[0]); });
+        $("file").addEventListener("change", function (e) { var f = e.target.files; if (f.length > 1) batch(f); else if (f[0]) run(f[0]); });
         ["dragover", "dragenter"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("is-over"); }); });
         ["dragleave", "drop"].forEach(function (ev) { drop.addEventListener(ev, function () { drop.classList.remove("is-over"); }); });
-        drop.addEventListener("drop", function (e) { e.preventDefault(); var f = e.dataTransfer.files[0]; if (f && /^image\//.test(f.type)) run(f); });
+        drop.addEventListener("drop", function (e) { e.preventDefault(); var fs = e.dataTransfer.files, f = fs[0]; if (fs.length > 1) batch(fs); else if (f && /^image\//.test(f.type)) run(f); });
+
+        // several files: each processed with the current settings, then added to the sheet list
+        async function batch(files) {
+          if (busy) return;
+          files = [].filter.call(files, function (f) { return /^image\//.test(f.type); });
+          var b = $("batchSay"), ok = 0;
+          for (var i = 0; i < files.length; i++) {
+            b.textContent = (i + 1) + "/" + files.length + " ban rahi hai...";
+            if (await run(files[i], true)) { addToList(); ok++; }
+          }
+          st.keep = false;
+          b.textContent = ok + "/" + files.length + " photos sheet mein jud gayi.";
+          $("sheet").scrollIntoView({ behavior: "smooth", block: "start" });
+        }
 
         var busy = false;
-        async function run(file) {
-          if (busy) return; busy = true;
+        async function run(file, keep) {
+          if (busy) return; busy = true; st.keep = !!keep;
           $("tasks").hidden = false;
           ["load", "bg", "face", "enh"].forEach(function (k) { task(k, "Baaki"); });
-          st.ai = false; $("aiClear").setAttribute("aria-pressed", "false"); aiSay("");
+          if (!keep) { st.ai = false; $("aiClear").setAttribute("aria-pressed", "false"); aiSay(""); }
           try {
             task("load", "Chal raha hai", true); say("Photo load ho rahi hai...");
             var img = await loadImg(file);
@@ -1402,7 +1453,8 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             task("load", "Fail"); say("Ye photo khul nahi rahi. Koi aur JPG/PNG try karein.", true); busy = false; return;
           }
           say("Seedha kar rahe hain..."); st.roll = await getRoll(st.raw);
-          await process(true);
+          await process(!keep);
+          return true;
         }
 
         // ---------- auto straighten ----------
@@ -1590,7 +1642,9 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           }
 
           task("enh", "Chal raha hai", true);
-          resetCrop(); compose(); render();
+          var z = st.zoom; resetCrop();
+          if (st.keep) { st.zoom = z; $("zoom").value = z; $("zoomVal").textContent = z + "%"; }
+          compose(); render();
           task("enh", "Ho gaya");
           var bgFailed = !st.alpha;
           if (faceMsg || bgFailed) say((bgFailed ? "Background nahi hata (" + bgErrs.join(" | ") + "). Original background ke saath aage badh sakte hain. " : "") + faceMsg, true);
@@ -1897,8 +1951,33 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           var out = canvas(PW, PH), ox = out.getContext("2d");
           ox.imageSmoothingEnabled = true; ox.imageSmoothingQuality = "high"; ox.drawImage(t, 0, 0, PW, PH);
           if (clr) clearUp(out, b); else enhance(out);
+          if ($("nd").checked) { out = nameDate(out); ox = out.getContext("2d"); }
           if (st.border) { ox.strokeStyle = "#000"; ox.lineWidth = STROKE; ox.strokeRect(STROKE / 2, STROKE / 2, PW - STROKE, PH - STROKE); }
           return out;
+        }
+
+        // name + date: white strip under a shrunk photo, or a black slate over the lower part
+        function nameDate(src) {
+          var lines = [$("ndName").value.trim(), $("ndDate").value.trim()].filter(Boolean);
+          var c = src, x = c.getContext("2d"), a, slate = st.nd === "slate";
+          if (slate) {
+            a = { w: PW * 0.72, h: PH * 0.17 }; a.x = (PW - a.w) / 2; a.y = PH * 0.8;
+            x.fillStyle = "#000"; x.fillRect(a.x, a.y, a.w, a.h);
+          } else {
+            var h = Math.round(PH * 0.85), w = Math.round(PW * 0.85);
+            c = canvas(PW, PH); x = c.getContext("2d");
+            x.fillStyle = padColor(); x.fillRect(0, 0, PW, h);
+            x.imageSmoothingQuality = "high"; x.drawImage(src, (PW - w) / 2, 0, w, h);
+            a = { x: 0, y: h, w: PW, h: PH - h }; x.fillStyle = "#fff"; x.fillRect(a.x, a.y, a.w, a.h);
+          }
+          x.fillStyle = slate ? "#fff" : "#000"; x.textAlign = "center"; x.textBaseline = "middle";
+          lines.forEach(function (t, i) {
+            var fs = Math.min(54, a.h / (lines.length * 1.3));
+            x.font = "bold " + fs + "px Geist, Arial, sans-serif";
+            var mw = x.measureText(t).width; if (mw > a.w * 0.9) { fs *= a.w * 0.9 / mw; x.font = "bold " + fs + "px Geist, Arial, sans-serif"; }
+            x.fillText(t, PW / 2, a.y + a.h * (i + 0.5) / lines.length);
+          });
+          return c;
         }
 
         var photo = null, orig = null, sheetTimer = null;
@@ -1915,19 +1994,24 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
 
         // where each item sits on the sheet (px at 600 DPI); the original copy comes after the processed ones
         function slots() {
-          var n = st.copies + (st.origA4 ? 1 : 0), out = [];
-          for (var i = 0; i < n; i++) {
-            var col = i % 6, row = Math.floor(i / 6);
-            out.push({ col: col, row: row, orig: i >= st.copies });
+          var out = [], i = 0;
+          if (list.length) { // sheet list: each person's copies together, PER per A4 page
+            list.forEach(function (it, j) {
+              for (var c = 0; c < it.n; c++, i++) out.push({ col: i % 6, row: Math.floor((i % PER) / 6), page: Math.floor(i / PER), img: it.c, key: "p" + j });
+            });
+            return out;
           }
+          var n = st.copies + (st.origA4 ? 1 : 0);
+          for (; i < n; i++) out.push({ col: i % 6, row: Math.floor(i / 6), page: 0, orig: i >= st.copies });
           return out;
         }
         function drawSheet(x, k) {
           x.fillStyle = "#fff"; x.fillRect(0, 0, SW * k, SH * k);
           x.imageSmoothingQuality = "high";
           slots().forEach(function (s) {
+            if (s.page) return;
             var px = M + s.col * (PW + GAP), py = M + s.row * (PH + GAP);
-            x.drawImage(s.orig ? orig : photo, px * k, py * k, PW * k, PH * k);
+            x.drawImage(s.img || (s.orig ? orig : photo), px * k, py * k, PW * k, PH * k);
             if (s.orig) {
               x.fillStyle = "#8a8a8a"; x.textAlign = "center"; x.textBaseline = "top";
               x.font = Math.max(6, Math.round(34 * k)) + "px Geist, sans-serif";
@@ -1948,6 +2032,37 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           var c = $("sheetPrev");
           drawSheet(c.getContext("2d"), c.width / SW);
         }
+
+        // ---------- multi-person sheet list ----------
+        var list = [], PER = 6 * Math.floor((SH - 2 * M + GAP) / (PH + GAP));
+        function addToList() {
+          if (!photo) return;
+          var c = canvas(PW, PH); c.getContext("2d").drawImage(photo, 0, 0);
+          list.push({ c: c, n: 6 }); drawList();
+        }
+        function drawList() {
+          var box = $("sheetList"); box.textContent = "";
+          list.forEach(function (it, i) {
+            var d = document.createElement("div"), t = canvas(96, 112), r = document.createElement("div");
+            d.className = "x-si"; r.className = "x-row";
+            t.getContext("2d").drawImage(it.c, 0, 0, 96, 112); t.setAttribute("role", "img"); t.setAttribute("aria-label", "Vyakti " + (i + 1));
+            r.innerHTML = '<input type="number" min="1" max="' + PER + '" aria-label="Copies, vyakti ' + (i + 1) + '" /><button class="x-opt" type="button" aria-label="Hatayein, vyakti ' + (i + 1) + '">×</button>';
+            r.firstChild.value = it.n;
+            r.firstChild.addEventListener("input", function () { it.n = Math.max(1, Math.min(PER, Math.round(+this.value) || 1)); listInfo(); });
+            r.lastChild.addEventListener("click", function () { list.splice(list.indexOf(it), 1); drawList(); });
+            d.append(t, r); box.appendChild(d);
+          });
+          $("sheetClear").hidden = !list.length; listInfo();
+        }
+        function listInfo() {
+          var n = list.reduce(function (a, it) { return a + it.n; }, 0), p = Math.ceil(n / PER);
+          $("sheetInfo").textContent = list.length
+            ? list.length + " log · " + n + " photos · " + p + " A4 page" + (p > 1 ? ". Preview, PNG aur JPG mein sirf page 1; PDF mein saare pages." : "")
+            : "Sheet mein photo jodne par A4 par sirf sheet ki photos lagengi, har vyakti ki copies ek saath.";
+          previewSheet();
+        }
+        $("sheetAdd").addEventListener("click", addToList);
+        $("sheetClear").addEventListener("click", function () { list = []; drawList(); });
 
         // ---------- PDF ----------
         async function getJsPDF() {
@@ -1972,9 +2087,11 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         async function makePdf() {
           var J = await getJsPDF();
           var doc = new J({ unit: "mm", format: "a4", orientation: "portrait" });
-          var data = photo.toDataURL("image/jpeg", 0.98), odata = st.origA4 ? orig.toDataURL("image/jpeg", 0.98) : null;
+          var data = photo.toDataURL("image/jpeg", 0.98), odata = st.origA4 ? orig.toDataURL("image/jpeg", 0.98) : null, cache = {};
           slots().forEach(function (s) {
             var x = MM_M + s.col * (MM_W + MM_GAP), y = MM_M + s.row * (MM_H + MM_GAP);
+            while (s.page >= doc.getNumberOfPages()) doc.addPage();
+            if (s.img) { doc.addImage(cache[s.key] || (cache[s.key] = s.img.toDataURL("image/jpeg", 0.98)), "JPEG", x, y, MM_W, MM_H, s.key, "NONE"); return; }
             if (!s.orig) { doc.addImage(data, "JPEG", x, y, MM_W, MM_H, "passport", "NONE"); return; }
             doc.addImage(odata, "JPEG", x, y, MM_W, MM_H, "original", "NONE");
             doc.setFontSize(6); doc.setTextColor(138, 138, 138);
@@ -2092,9 +2209,26 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             if (b.dataset.bg !== "orig") b.disabled = !st.alpha;
           });
           if (!st.alpha) document.querySelector('[data-bg="orig"]').setAttribute("aria-pressed", "true");
+          $("bgPick").disabled = !st.alpha;
         }
         document.querySelectorAll("[data-bg]").forEach(function (b) {
-          b.addEventListener("click", function () { st.bg = b.dataset.bg; setBgButtons(); compose(); render(); });
+          b.addEventListener("click", function (e) {
+            if (b.tagName === "LABEL" && e.target !== $("bgPick")) return;
+            st.bg = b.dataset.bg; setBgButtons(); if (st.src) { compose(); render(); }
+          });
+        });
+        $("bgPick").addEventListener("input", function () { var v = this.value, l = this.parentNode; l.dataset.bg = v; $("bgSw").style.background = v; });
+        $("bgPick").addEventListener("change", function () { st.bg = this.value; setBgButtons(); if (st.src) { compose(); render(); } });
+        (function () { var d = new Date(), p = function (n) { return String(n).padStart(2, "0"); }; $("ndDate").value = p(d.getDate()) + "-" + p(d.getMonth() + 1) + "-" + d.getFullYear(); })();
+        st.nd = "strip";
+        function ndSoon() { if (st.base) renderSoon(); }
+        ["nd", "ndName", "ndDate"].forEach(function (id) { $(id).addEventListener("input", ndSoon); $(id).addEventListener("change", ndSoon); });
+        document.querySelectorAll("[data-nd]").forEach(function (b) {
+          b.addEventListener("click", function () {
+            st.nd = b.dataset.nd;
+            document.querySelectorAll("[data-nd]").forEach(function (o) { o.setAttribute("aria-pressed", String(o === b)); });
+            ndSoon();
+          });
         });
         $("zoom").addEventListener("input", function (e) {
           st.zoom = +e.target.value; $("zoomVal").textContent = st.zoom + "%"; renderSoon();
