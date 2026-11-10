@@ -852,6 +852,18 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
       .x-pages figcaption { font: var(--type-caption); color: var(--text-secondary); max-width: 240px; }
       .x-pages img { width: 240px; height: auto; display: block; border: 1px solid var(--stroke-primary); border-radius: var(--r-s); background: #fff; }
       .x-pdfv { width: 100%; height: 480px; border: 1px solid var(--stroke-primary); border-radius: var(--r-s); }
+      body.x-rs .main > :not(.hero):not(.x-tabs):not(#rs) { display: none !important; }
+      body:not(.x-rs) #rs { display: none !important; }
+      .x-rsw { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr); }
+      @media (min-width: 760px) { .x-rsw { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+      .x-rsp { width: auto; height: auto; max-width: 100%; max-height: 480px; display: block; border-radius: var(--r-s); background: var(--fill-tertiary); touch-action: none; cursor: grab; }
+      .x-rsp:active { cursor: grabbing; }
+      .x-fl { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; }
+      .x-fl label:not(.x-ck) { display: grid; gap: 4px; font: var(--type-small); color: var(--text-secondary); }
+      .x-fl input:not([type="checkbox"]), .x-fl select { width: 96px; min-height: var(--tap); padding: 0 8px; font: var(--type-small); color: var(--text-primary); background: var(--fill-primary-on); border: 1px solid var(--stroke-primary); border-radius: var(--r-s); }
+      .x-ck { display: inline-flex; align-items: center; gap: 8px; min-height: var(--tap); font: var(--type-small); color: var(--text-primary); }
+      .x-ck input { width: 20px; height: 20px; accent-color: var(--fill-primary); }
+      .x-rso { max-width: 100%; max-height: 320px; height: auto; display: block; border: 1px solid var(--stroke-primary); border-radius: var(--r-s); background: #fff; }
     </style>
   </head>
   <body>
@@ -870,6 +882,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         <div class="x-opts x-tabs" role="tablist" aria-label="Tool">
           <button class="x-opt" type="button" role="tab" data-tab="pp" aria-pressed="true" aria-selected="true">Passport Photo</button>
           <button class="x-opt" type="button" role="tab" data-tab="doc" aria-pressed="false" aria-selected="false">Document Print</button>
+          <button class="x-opt" type="button" role="tab" data-tab="rs" aria-pressed="false" aria-selected="false">Photo / Sign Resize</button>
         </div>
 
         <p class="x-strip" aria-label="Steps">
@@ -1049,6 +1062,83 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             <p class="fineprint">Card 85.6 × 54 mm asli size mein. Page image par right-click karke 'Save image as' bhi kar sakte hain. Print par 'Actual size / 100%' chunein.</p>
             <div id="docPdfBox" hidden><iframe class="x-pdfv" id="docPdfView" title="Documents PDF preview"></iframe></div>
           </div>
+        </section>
+
+        <section class="section" id="rs">
+          <div class="head">
+            <p class="head__eyebrow">Photo / Sign Resize</p>
+            <h2>Photo ya signature ko form ke exact size aur KB mein badlein.</h2>
+            <p class="head__sub">px, mm, cm ya inch mein size, aur 20 se 50 KB jaisi limit ke andar file.</p>
+          </div>
+          <label class="x-drop" id="rsDrop">
+            <input type="file" id="rsFile" accept="image/*" />
+            <strong>Photo ya signature chunein</strong>
+            <span>Yahan tap karein ya image drag karke chhodein</span>
+          </label>
+          <p class="x-status" id="rsSay" role="status" aria-live="polite"></p>
+          <div class="x-rsw" id="rsWork" hidden>
+            <div>
+              <canvas class="x-rsp" id="rsPrev" width="1" height="1" role="img" aria-label="Uploaded image preview with crop box"></canvas>
+              <p class="fineprint" id="rsHint">Box ko drag karke khiskaayein.</p>
+            </div>
+            <div class="x-ctrl">
+              <div>
+                <h3>Quick presets</h3>
+                <div class="x-opts">
+                  <button class="x-opt" type="button" data-p="mm,35,45" aria-pressed="true">Passport 35×45 mm</button>
+                  <button class="x-opt" type="button" data-p="cm,3.5,4.5" aria-pressed="false">SSC photo 3.5×4.5 cm</button>
+                  <button class="x-opt" type="button" data-p="cm,3.5,1.5" aria-pressed="false">Signature 3.5×1.5 cm</button>
+                  <button class="x-opt" type="button" data-p="px,350,350" aria-pressed="false">UPSC 350×350 px</button>
+                  <button class="x-opt" type="button" data-p="inch,2,2" aria-pressed="false">2×2 inch</button>
+                </div>
+              </div>
+              <div>
+                <h3>Size</h3>
+                <div class="x-fl">
+                  <label>Unit <select id="rsUnit"><option>px</option><option selected>mm</option><option>cm</option><option>inch</option></select></label>
+                  <label>Width <input id="rsW" type="number" min="0" step="any" value="35" /></label>
+                  <label>Height <input id="rsH" type="number" min="0" step="any" value="45" /></label>
+                  <label>DPI <input id="rsDpi" type="number" min="30" max="1200" step="1" value="300" /></label>
+                  <label class="x-ck"><input type="checkbox" id="rsLock" checked /> Ratio lock</label>
+                </div>
+              </div>
+              <div>
+                <h3>Fit mode</h3>
+                <div class="x-opts">
+                  <button class="x-opt" type="button" data-fit="crop" aria-pressed="true">Crop karke bhare</button>
+                  <button class="x-opt" type="button" data-fit="pad" aria-pressed="false">Pura dikhe</button>
+                </div>
+                <div class="x-trim" id="rsZWrap"><label>Box size <input type="range" id="rsZ" min="30" max="100" value="100" aria-label="Crop box size" /><output id="rsZV">100%</output></label></div>
+              </div>
+              <div>
+                <h3>File size (KB) aur format</h3>
+                <div class="x-fl">
+                  <label>Min KB <input id="rsMin" type="number" min="0" step="any" value="20" /></label>
+                  <label>Max KB <input id="rsMax" type="number" min="0" step="any" value="50" /></label>
+                  <span class="x-opts">
+                    <button class="x-opt" type="button" data-fmt="jpg" aria-pressed="true">JPG</button>
+                    <button class="x-opt" type="button" data-fmt="png" aria-pressed="false">PNG</button>
+                  </span>
+                </div>
+              </div>
+              <div>
+                <h3>Signature</h3>
+                <label class="x-ck"><input type="checkbox" id="rsInk" /> Sign saaf karein <small>(safed par kaali syahi)</small></label>
+              </div>
+            </div>
+          </div>
+          <div id="rsOut" hidden>
+            <div class="head"><h2>Result</h2></div>
+            <img class="x-rso" id="rsImg" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==" alt="Resized result preview" />
+            <section class="stats">
+              <div class="stat"><span class="stat__fig" id="rsPx">–</span><span class="stat__label">Pixels</span></div>
+              <div class="stat"><span class="stat__fig" id="rsMm">–</span><span class="stat__label">mm (DPI ke hisaab se)</span></div>
+              <div class="stat"><span class="stat__fig" id="rsKb">–</span><span class="stat__label">KB</span></div>
+            </section>
+            <p class="x-status" id="rsNote" role="status" aria-live="polite"></p>
+            <div class="links"><button class="btn x-primary" type="button" id="rsDl">Download</button></div>
+          </div>
+          <p class="fineprint">Image aapke device par hi resize hoti hai. JPG/PNG mein DPI likha jaata hai, taki print sahi mm mein aaye.</p>
         </section>
       </main>
       <footer class="foot">
@@ -2662,6 +2752,180 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             msg("PDF taiyaar. Download na hua ho to neeche ke viewer ya page images use karein.");
           } catch (e) { console.error(e); msg("PDF fail: " + err(e) + ". Page image par right-click karke save karein.", true); }
           b.classList.remove("x-btn-busy");
+        });
+      })();
+    </script>
+    <script>
+      (function () {
+        var $ = function (i) { return document.getElementById(i); };
+        var PER = { mm: 25.4, cm: 2.54, inch: 1 };
+        var S = { img: null, ink: null, cx: 0, cy: 0, z: 1, fit: "crop", fmt: "jpg", r: 35 / 45, uri: null };
+        var unit = $("rsUnit"), W = $("rsW"), H = $("rsH"), D = $("rsDpi"), lock = $("rsLock"), P = $("rsPrev"), prevU = unit.value, tm = 0, tok = 0;
+        document.querySelectorAll("[data-tab]").forEach(function (b) {
+          b.addEventListener("click", function () { document.body.classList.toggle("x-rs", b.dataset.tab === "rs"); });
+        });
+        function say(id, t, bad) { var e = $(id); e.textContent = t; e.classList.toggle("is-err", !!bad); }
+        function cnv(w, h) { var c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; }
+        function dpi() { return Math.max(30, Math.min(1200, +D.value || 300)); }
+        function toPx(v, u) { u = u || unit.value; return u === "px" ? v : v / PER[u] * dpi(); }
+        function fromPx(p, u) { u = u || unit.value; return u === "px" ? Math.round(p) : +(p * PER[u] / dpi()).toFixed(2); }
+        function fv(v) { return unit.value === "px" ? Math.round(v) : +v.toFixed(2); }
+        function tgt() { var f = function (e) { return Math.max(1, Math.min(6000, Math.round(toPx(+e.value || 0)))); }; return { w: f(W), h: f(H) }; }
+        function src() { if (!$("rsInk").checked) return S.img; return S.ink || (S.ink = clean(S.img)); }
+        // ink: luminance / local paper brightness, ramped to pure white and black
+        function clean(s) {
+          var w = s.width, h = s.height, c = cnv(w, h), x = c.getContext("2d"), sm = cnv(w / 24, h / 24), b = cnv(w, h), bx = b.getContext("2d");
+          x.drawImage(s, 0, 0);
+          sm.getContext("2d").drawImage(s, 0, 0, sm.width, sm.height);
+          bx.imageSmoothingQuality = "high"; bx.drawImage(sm, 0, 0, w, h);
+          var id = x.getImageData(0, 0, w, h), p = id.data, g = bx.getImageData(0, 0, w, h).data;
+          for (var i = 0; i < p.length; i += 4) {
+            var L = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2], B = Math.max(40, 0.299 * g[i] + 0.587 * g[i + 1] + 0.114 * g[i + 2]);
+            p[i] = p[i + 1] = p[i + 2] = Math.max(0, Math.min(255, (L / B - 0.65) / 0.2 * 255)); p[i + 3] = 255;
+          }
+          x.putImageData(id, 0, 0); return c;
+        }
+        function box() {
+          var s = S.img, t = tgt(), a = t.w / t.h, bw = s.width, bh = s.height;
+          if (bw / bh > a) bw = bh * a; else bh = bw / a;
+          bw *= S.z; bh *= S.z;
+          S.cx = Math.min(s.width - bw / 2, Math.max(bw / 2, S.cx)); S.cy = Math.min(s.height - bh / 2, Math.max(bh / 2, S.cy));
+          return { x: S.cx - bw / 2, y: S.cy - bh / 2, w: bw, h: bh };
+        }
+        function drawPrev() {
+          var s = src(), k = Math.min(1, 900 / Math.max(s.width, s.height)), x;
+          P.width = Math.round(s.width * k); P.height = Math.round(s.height * k); x = P.getContext("2d");
+          x.drawImage(s, 0, 0, P.width, P.height);
+          if (S.fit !== "crop") return;
+          var b = box();
+          x.fillStyle = "rgba(0,0,0,0.5)"; x.beginPath(); x.rect(0, 0, P.width, P.height); x.rect(b.x * k, b.y * k, b.w * k, b.h * k); x.fill("evenodd");
+          x.strokeStyle = "#fff"; x.lineWidth = 2; x.strokeRect(b.x * k, b.y * k, b.w * k, b.h * k);
+        }
+        // crop r from s, halve down, draw into d on x
+        function put(x, s, r, d) {
+          var c = cnv(r.w, r.h); c.getContext("2d").drawImage(s, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
+          while (c.width / 2 > d.w) { var n = cnv(c.width / 2, c.height / 2), nx = n.getContext("2d"); nx.imageSmoothingQuality = "high"; nx.drawImage(c, 0, 0, n.width, n.height); c = n; }
+          x.imageSmoothingQuality = "high"; x.drawImage(c, d.x, d.y, d.w, d.h);
+        }
+        function make(t) {
+          var s = src(), c = cnv(t.w, t.h), x = c.getContext("2d");
+          x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+          if (S.fit === "crop") put(x, s, box(), { x: 0, y: 0, w: c.width, h: c.height });
+          else { var k = Math.min(c.width / s.width, c.height / s.height), w = s.width * k, h = s.height * k; put(x, s, { x: 0, y: 0, w: s.width, h: s.height }, { x: (c.width - w) / 2, y: (c.height - h) / 2, w: w, h: h }); }
+          return c;
+        }
+        var crcT = []; for (var n = 0; n < 256; n++) { var c0 = n; for (var k = 0; k < 8; k++) c0 = c0 & 1 ? 0xedb88320 ^ (c0 >>> 1) : c0 >>> 1; crcT[n] = c0 >>> 0; }
+        function crc(u) { var c = 0xffffffff; for (var i = 0; i < u.length; i++) c = crcT[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+        function withDpi(a) {
+          var d = dpi(), o;
+          if (S.fmt === "png") {
+            var ch = new Uint8Array(21), v = new DataView(ch.buffer), m = Math.round(d / 0.0254);
+            v.setUint32(0, 9); ch.set([112, 72, 89, 115], 4); v.setUint32(8, m); v.setUint32(12, m); ch[16] = 1; v.setUint32(17, crc(ch.subarray(4, 17)));
+            o = new Uint8Array(a.length + 21); o.set(a.subarray(0, 33)); o.set(ch, 33); o.set(a.subarray(33), 54); return o;
+          }
+          if (a[2] === 255 && a[3] === 224 && a[6] === 74 && a[7] === 70) { a[13] = 1; a[14] = a[16] = d >> 8; a[15] = a[17] = d & 255; return a; }
+          o = new Uint8Array(a.length + 18); // insert a JFIF APP0 after SOI
+          o.set([255, 216, 255, 224, 0, 16, 74, 70, 73, 70, 0, 1, 1, 1, d >> 8, d & 255, d >> 8, d & 255, 0, 0]); o.set(a.subarray(2), 20); return o;
+        }
+        async function enc(c, q) {
+          var b = await new Promise(function (ok) { c.toBlob(ok, S.fmt === "png" ? "image/png" : "image/jpeg", q); });
+          return withDpi(new Uint8Array(await b.arrayBuffer()));
+        }
+        async function encode(t) {
+          var mn = (+$("rsMin").value || 0) * 1024, mx = (+$("rsMax").value || 0) * 1024 || Infinity, sc = 1, c, a, q = null;
+          for (var i = 0; i < 30; i++) {
+            c = make({ w: t.w * sc, h: t.h * sc });
+            if (S.fmt === "png") { a = await enc(c); break; }
+            a = await enc(c, 0.95); q = 0.95;
+            if (a.length <= mx) break;
+            var lo = await enc(c, 0.05);
+            if (lo.length > mx) { sc *= 0.92; continue; }
+            var l = 0.05, h = 0.95; a = lo; q = 0.05;
+            for (var j = 0; j < 8; j++) { var m = (l + h) / 2, b = await enc(c, m); if (b.length <= mx) { a = b; q = m; l = m; } else h = m; }
+            break;
+          }
+          return { c: c, a: a, q: q, sc: sc, mn: mn, mx: mx };
+        }
+        function go() { if (!S.img) return; drawPrev(); clearTimeout(tm); tm = setTimeout(run, 250); }
+        async function run() {
+          var my = ++tok; say("rsSay", "Ban raha hai...");
+          try {
+            var r = await encode(tgt()); if (my !== tok) return;
+            var c = r.c, d = dpi(), kb = r.a.length / 1024, notes = [];
+            S.uri = await new Promise(function (ok) { var f = new FileReader(); f.onload = function () { ok(f.result); }; f.readAsDataURL(new Blob([r.a], { type: S.fmt === "png" ? "image/png" : "image/jpeg" })); });
+            if (my !== tok) return;
+            $("rsImg").src = S.uri;
+            $("rsPx").textContent = c.width + " × " + c.height;
+            $("rsMm").textContent = (c.width / d * 25.4).toFixed(1) + " × " + (c.height / d * 25.4).toFixed(1);
+            $("rsKb").textContent = kb.toFixed(1);
+            if (r.q) notes.push("JPG quality " + Math.round(r.q * 100) + "%.");
+            if (r.sc < 1) notes.push("Max KB ke andar laane ke liye px thoda chhota kiya.");
+            if (r.a.length > r.mx) notes.push("File max KB se badi hai" + (S.fmt === "png" ? ", JPG chunein." : "."));
+            if (r.a.length < r.mn) notes.push("File min KB se chhoti hai, best quality par bhi. Badi px size ya zyada DPI try karein.");
+            say("rsNote", notes.join(" "), r.a.length > r.mx || r.a.length < r.mn);
+            $("rsOut").hidden = false; say("rsSay", "Taiyaar.");
+          } catch (e) { console.error(e); say("rsSay", "Resize fail: " + ((e && e.message) || e), true); }
+        }
+        function load(f) {
+          if (!f || !/^image\//.test(f.type)) { say("rsSay", "Sirf image file (JPG/PNG) chunein.", true); return; }
+          var fr = new FileReader();
+          fr.onload = function () {
+            var im = new Image();
+            im.onload = function () {
+              var k = Math.min(1, 4000 / Math.max(im.naturalWidth, im.naturalHeight)), c = cnv(im.naturalWidth * k, im.naturalHeight * k), x = c.getContext("2d");
+              x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.imageSmoothingQuality = "high"; x.drawImage(im, 0, 0, c.width, c.height);
+              S.img = c; S.ink = null; S.cx = c.width / 2; S.cy = c.height / 2;
+              $("rsWork").hidden = false; go();
+            };
+            im.onerror = function () { say("rsSay", "Ye image khul nahi rahi. Koi aur JPG/PNG try karein.", true); };
+            im.src = fr.result;
+          };
+          fr.readAsDataURL(f);
+        }
+        function press(sel, b) { document.querySelectorAll(sel).forEach(function (o) { o.setAttribute("aria-pressed", String(o === b)); }); }
+        var drop = $("rsDrop");
+        $("rsFile").addEventListener("change", function () { load(this.files[0]); this.value = ""; });
+        ["dragenter", "dragover"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("is-over"); }); });
+        ["dragleave", "drop"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("is-over"); }); });
+        drop.addEventListener("drop", function (e) { if (e.dataTransfer) load(e.dataTransfer.files[0]); });
+        document.querySelectorAll("[data-p]").forEach(function (b) {
+          b.addEventListener("click", function () {
+            var p = b.dataset.p.split(","); unit.value = prevU = p[0]; W.value = p[1]; H.value = p[2]; S.r = p[1] / p[2];
+            press("[data-p]", b); go();
+          });
+        });
+        unit.addEventListener("change", function () {
+          W.value = fromPx(toPx(+W.value || 0, prevU)); H.value = fromPx(toPx(+H.value || 0, prevU)); prevU = unit.value; go();
+        });
+        function edited(e, o, f) {
+          press("[data-p]", null);
+          if (lock.checked && +e.value > 0) o.value = fv(f(+e.value)); else if (+W.value > 0 && +H.value > 0) S.r = W.value / H.value;
+          go();
+        }
+        W.addEventListener("input", function () { edited(W, H, function (v) { return v / S.r; }); });
+        H.addEventListener("input", function () { edited(H, W, function (v) { return v * S.r; }); });
+        lock.addEventListener("change", function () { if (+W.value > 0 && +H.value > 0) S.r = W.value / H.value; });
+        ["rsDpi", "rsMin", "rsMax"].forEach(function (id) { $(id).addEventListener("input", go); });
+        document.querySelectorAll("[data-fit]").forEach(function (b) {
+          b.addEventListener("click", function () { S.fit = b.dataset.fit; press("[data-fit]", b); $("rsZWrap").hidden = $("rsHint").hidden = S.fit !== "crop"; go(); });
+        });
+        document.querySelectorAll("[data-fmt]").forEach(function (b) {
+          b.addEventListener("click", function () { S.fmt = b.dataset.fmt; press("[data-fmt]", b); go(); });
+        });
+        $("rsZ").addEventListener("input", function () { S.z = this.value / 100; $("rsZV").textContent = this.value + "%"; go(); });
+        $("rsInk").addEventListener("change", go);
+        var drag = null;
+        P.addEventListener("pointerdown", function (e) { if (S.fit !== "crop" || !S.img) return; drag = { x: e.clientX, y: e.clientY }; P.setPointerCapture(e.pointerId); });
+        P.addEventListener("pointermove", function (e) {
+          if (!drag) return;
+          var k = S.img.width / P.getBoundingClientRect().width;
+          S.cx += (e.clientX - drag.x) * k; S.cy += (e.clientY - drag.y) * k; drag = { x: e.clientX, y: e.clientY }; go();
+        });
+        ["pointerup", "pointercancel"].forEach(function (ev) { P.addEventListener(ev, function () { drag = null; }); });
+        $("rsDl").addEventListener("click", function () {
+          if (!S.uri) return;
+          var a = document.createElement("a"); a.href = S.uri; a.download = S.fmt === "png" ? "resized.png" : "resized.jpg"; a.style.display = "none";
+          document.body.appendChild(a); a.click(); a.remove();
         });
       })();
     </script>
