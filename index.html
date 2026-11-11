@@ -841,6 +841,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
       .x-row select, .x-row input { min-height: var(--tap); padding: 0 8px; font: var(--type-small); color: var(--text-primary); background: var(--fill-primary-on); border: 1px solid var(--stroke-primary); border-radius: var(--r-s); }
       .x-row select { flex: 1 1 100%; }
       .x-row input { width: 64px; }
+      .x-row .x-ck input { min-height: 0; padding: 0; }
       .x-trim { display: grid; gap: 4px; font: var(--type-small); color: var(--text-secondary); }
       .x-trim[hidden] { display: none; }
       .x-trim label { display: flex; align-items: center; gap: 8px; min-height: var(--tap); }
@@ -1093,6 +1094,10 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             <input id="docPwIn" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" />
             <button class="btn" type="button" id="docPwGo">Kholein</button>
             <span class="x-status is-err" id="docPwErr" role="alert"></span>
+          </div>
+          <div class="x-row">
+            <label class="x-ck"><input type="checkbox" id="docScan" /> Scan saaf karein (sab par): paper safed, text gehra, certificate / marksheet ke liye</label>
+            <select id="docScanMode" aria-label="Scan saaf: rang"><option value="c">Rangeen</option><option value="bw">Kaala-safed</option></select>
           </div>
           <p class="x-status" id="docStatus" role="status" aria-live="polite"></p>
           <div class="x-dl" id="docList"></div>
@@ -2332,7 +2337,8 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         var $ = function (i) { return document.getElementById(i); };
         var K = 300 / 25.4, PW = 2480, PH = 3508, CW = 1011, CH = 638;
         var MG = Math.round(10 * K), GX = Math.round(5 * K), GY = Math.round(8 * K), FM = Math.round(8 * K);
-        var TYPES = ["Aadhaar Front", "Aadhaar Back", "PAN / ID card (ek side)", "Full page"];
+        var TYPES = ["Aadhaar Front", "Aadhaar Back", "PAN", "Full page", "Voter ID", "Driving Licence", "Ration card (full page)", "Ayushman card", "ATM / Other card"];
+        var PAIRED = /^(Voter ID|Driving Licence)$/; // two of the same type pair front-left / back-right
         var items = [], seq = 0, cardN = 0, border = true, fill = true, urls = [], timer = null;
         function err(e) { return (e && e.message) || String(e); }
         function msg(t, bad) { var e = $("docStatus"); e.textContent = t; e.classList.toggle("is-err", !!bad); }
@@ -2376,7 +2382,9 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
               try { var fd = await new window.FaceDetector({ maxDetectedFaces: 1 }).detect(rot(b, best.q)); if (fd && fd.length) fs += 2; } catch (x) {}
             }
             it.fs = fs; it.bs = bs;
-            if (/INCOME TAX|Permanent Account/i.test(t)) type = TYPES[2];
+            var kw = /INCOME TAX|Permanent Account/i.test(t) ? TYPES[2] : /ELECTION\s+COMMISSION|\bEPIC\b/i.test(t) ? TYPES[4] :
+              /DRIVING\s+LICEN[CS]E|Union of India Driving/i.test(t) ? TYPES[5] : /Ayushman|PM-?JAY/i.test(t) ? TYPES[7] : null;
+            if (kw) { type = kw; num = null; }
             else if (num) {
               if (fs > bs) type = TYPES[0];
               else if (bs > fs) type = TYPES[1];
@@ -2597,9 +2605,35 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           x.putImageData(id, 0, 0);
           return c;
         }
+        // scan clean: divide by a local paper estimate (small copy, 3x3 max, smooth upscale), then levels
+        function cleanScan(src, bw) {
+          var W = src.width, H = src.height, c = cnv(W, H), x = c.getContext("2d"), i, j, v, p, q, yy, xx;
+          x.drawImage(src, 0, 0);
+          var id = x.getImageData(0, 0, W, H), d = id.data, N = d.length;
+          var s = scaled(scaled(src, Math.min(1, 256 / Math.max(W, H))), 0.25), w = s.width, h = s.height, sx = s.getContext("2d");
+          var sd = sx.getImageData(0, 0, w, h), a = sd.data, m = new Uint8ClampedArray(a);
+          for (yy = 0; yy < h; yy++) for (xx = 0; xx < w; xx++) for (j = 0; j < 3; j++) {
+            v = 0; for (p = -1; p < 2; p++) for (q = -1; q < 2; q++) v = Math.max(v, a[((Math.min(h - 1, Math.max(0, yy + p)) * w) + Math.min(w - 1, Math.max(0, xx + q))) * 4 + j]);
+            m[(yy * w + xx) * 4 + j] = v;
+          }
+          sd.data.set(m); sx.putImageData(sd, 0, 0);
+          var bc = cnv(W, H), bx = bc.getContext("2d"); bx.imageSmoothingQuality = "high"; bx.drawImage(s, 0, 0, W, H);
+          var bg = bx.getImageData(0, 0, W, H).data, L = function (a, k) { return 0.299 * a[k] + 0.587 * a[k + 1] + 0.114 * a[k + 2]; };
+          var hs = new Uint32Array(256), lo = 0, acc = 0, r = new Float32Array(N / 4 * 3), HI = 0.9;
+          for (i = 0, p = 0; i < N; i += 4, p += 3) {
+            if (bw) { v = L(d, i) / Math.max(L(bg, i), 1); r[p] = r[p + 1] = r[p + 2] = v; }
+            else for (j = 0; j < 3; j++) r[p + j] = v = d[i + j] / Math.max(bg[i + j], 1);
+            hs[Math.min(255, (L(r, p) * 200) | 0)]++;
+          }
+          for (i = 0; i < 256; i++) { acc += hs[i]; if (acc <= N / 4 * 0.005) lo = i / 200; }
+          lo = Math.min(lo, 0.5);
+          for (i = 0, p = 0; i < N; i += 4, p += 3) for (j = 0; j < 3; j++) d[i + j] = 255 * Math.pow(Math.min(1, Math.max(0, (r[p + j] - lo) / (HI - lo))), 1.4);
+          x.putImageData(id, 0, 0);
+          return c;
+        }
 
         // ---------- items ----------
-        function isCard(t) { return t !== "Full page"; }
+        function isCard(t) { return !/full page/i.test(t); }
         function setSt(it, t, bad) { var e = it.el.querySelector(".x-status"); e.textContent = t; e.classList.toggle("is-err", !!bad); }
         // ---------- card edge trim (after warp, before enhance) ----------
         function autoTrim(src) { // {l, t, r, b} in src pixels: where the card's own edge sits
@@ -2670,7 +2704,8 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           return c;
         }
         function render(it) {
-          it.out = enhance(isCard(it.type) ? trimmed(it) : it.proc, it.bw);
+          var base = isCard(it.type) ? trimmed(it) : it.proc;
+          it.out = it.scan ? cleanScan(base, it.scan === "bw") : enhance(base, it.bw);
           var t = it.el.querySelector("canvas"), s = Math.min(1, 480 / Math.max(it.out.width, it.out.height));
           t.width = Math.round(it.out.width * s); t.height = Math.round(it.out.height * s);
           t.getContext("2d").drawImage(it.out, 0, 0, t.width, t.height);
@@ -2683,6 +2718,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             '<p class="x-status" role="status"></p><p class="x-status x-ocr" aria-live="polite"></p>' +
             '<div class="x-row"><select aria-label="Document type">' + TYPES.map(function (t) { return "<option>" + t + "</option>"; }).join("") + "</select>" +
             '<label>Pair no. <input type="number" min="1" step="1" value="1" /></label></div>' +
+            '<div class="x-row"><label for="sc' + it.id + '">Scan saaf karein</label><select id="sc' + it.id + '" data-k="scan"><option value="">Nahi</option><option value="c">Rangeen</option><option value="bw">Kaala-safed</option></select></div>' +
             '<div class="x-trim" hidden><label>Kinara kaatein <input type="range" data-k="inset" min="-6" max="12" step="0.5" value="0" aria-label="Kinara kaatein, har taraf se pratishat" /><output>0%</output></label>' +
             [["t", "Upar"], ["b", "Neeche"], ["l", "Baayein"], ["r", "Daayein"]].map(function (s) {
               return '<label class="x-side">' + s[1] + ' <input type="range" data-k="side" data-s="' + s[0] + '" min="-8" max="8" step="0.5" value="0" aria-label="' + s[1] + ' kinara, minus failaye, plus kaate" /><output>0%</output></label>';
@@ -2715,6 +2751,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         list.addEventListener("change", function (e) {
           var it = itemOf(e.target); if (!it) return;
           if (e.target.dataset.k === "auto") { it.autoEdge = e.target.checked; if (it.ready) { render(it); later(); } return; }
+          if (e.target.dataset.k === "scan") { it.scan = e.target.value; if (it.ready) { render(it); later(); } return; }
           if (e.target.tagName !== "SELECT") return;
           var wasCard = isCard(it.type);
           it.type = e.target.value; it.userType = true; it.el.querySelector(".x-trim").hidden = !isCard(it.type);
@@ -2809,7 +2846,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             s = srcs[i]; f = s;
             it = { name: f.name, rot: 0, bw: false, pair: 1, type: "Full page", id: ++seq, inset: 0, autoEdge: true, trim: null, side: { t: 0, b: 0, l: 0, r: 0 }, pre: s.t ? s : null };
             try { it.src = s.c || await loadImg(s.f); } catch (e) { msg(f.name + ": " + err(e), true); continue; }
-            it.el = card(it); items.push(it); batch.push(it);
+            it.scan = gScan(); it.el = card(it); it.el.querySelector('[data-k="scan"]').value = it.scan; items.push(it); batch.push(it);
             $("docList").appendChild(it.el); setSt(it, "Crop + seedha ho raha hai...");
           }
           msg("Auto crop chal raha hai...");
@@ -2830,6 +2867,11 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             if (g) {
               it.type = g.type; it.pair = g.pair;
               if (g.rot) { it.proc = rot(it.proc, g.rot); it.orient = (it.orient + g.rot) % 4; }
+            }
+            if (PAIRED.test(it.type)) { // Voter ID / DL: pair with an unmatched one of the same type from this upload
+              var m0 = batch.slice(0, i).find(function (o) { return o.type === it.type && !o.mated && items.indexOf(o) >= 0; });
+              if (m0) { it.pair = m0.pair; m0.mated = it.mated = true; }
+              else it.pair = 1 + Math.max.apply(null, items.map(function (o) { return o === it ? 0 : o.pair || 0; }));
             }
             if (items.indexOf(it) < 0) continue;
             sync(it); render(it); it.ready = true;
@@ -2905,6 +2947,11 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             if (used.indexOf(it) >= 0) return;
             used.push(it);
             if (!isCard(it.type)) { groups.push({ full: it }); return; }
+            if (PAIRED.test(it.type)) {
+              var m1 = ok.find(function (o) { return used.indexOf(o) < 0 && o.type === it.type && o.pair === it.pair; });
+              if (m1) used.push(m1);
+              groups.push({ cards: m1 ? [it, m1].sort(function (a, b) { return a.id - b.id; }) : [it] }); return; // upload order: front LEFT
+            }
             if (!isAad(it)) { groups.push({ cards: [it] }); return; }
             var free = ok.filter(function (o) { return used.indexOf(o) < 0 && isAad(o) && same(it, o); });
             var mate = free.find(function (o) { return o.type !== it.type; }) || (it.aad ? free.find(function (o) { return o.aad === it.aad; }) : null);
@@ -2915,11 +2962,11 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           var x0 = Math.round((PW - 2 * CW - GX) / 2);
           groups.forEach(function (g) {
             var c = page(), x = c.getContext("2d");
-            if (g.full) { put(x, g.full.out, FM, FM, PW - 2 * FM, PH - 2 * FM, false); labels.push("Full page"); }
+            if (g.full) { put(x, g.full.out, FM, FM, PW - 2 * FM, PH - 2 * FM, false); labels.push(g.full.type); }
             else {
               g.cards.forEach(function (it, j) { put(x, it.out, x0 + j * (CW + GX), MG, CW, CH, border, fill); });
               var a = g.cards[0];
-              labels.push(g.cards.length === 2 ? "Aadhaar front + back" + (a.aad || g.cards[1].aad ? " · " + (a.aad || g.cards[1].aad) : "") : a.type + (a.aad ? " · " + a.aad : ""));
+              labels.push(g.cards.length === 2 ? (isAad(a) ? "Aadhaar" : a.type) + " front + back" + (a.aad || g.cards[1].aad ? " · " + (a.aad || g.cards[1].aad) : "") : a.type + (a.aad ? " · " + a.aad : ""));
             }
             pg.push(c);
           });
@@ -2940,6 +2987,14 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         ["dragenter", "dragover"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("is-over"); }); });
         ["dragleave", "drop"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("is-over"); }); });
         drop.addEventListener("drop", function (e) { if (e.dataTransfer) add(e.dataTransfer.files); });
+        function gScan() { return $("docScan").checked ? $("docScanMode").value : ""; }
+        ["docScan", "docScanMode"].forEach(function (k) {
+          $(k).addEventListener("change", function () {
+            var v = gScan();
+            items.forEach(function (it) { it.scan = v; it.el.querySelector('[data-k="scan"]').value = v; if (it.ready) render(it); });
+            layout();
+          });
+        });
         $("docBorder").addEventListener("click", function () { border = !border; this.setAttribute("aria-pressed", String(border)); layout(); });
         $("docFill").addEventListener("click", function () { fill = !fill; this.setAttribute("aria-pressed", String(fill)); layout(); });
         $("docPdf").addEventListener("click", async function () {
