@@ -882,6 +882,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
       .x-di[draggable="true"] { cursor: grab; }
       .x-di.is-drag { opacity: 0.5; }
       .x-di .x-opt { justify-content: center; min-width: var(--tap); padding: 5px 10px; }
+      .x-sc { display: grid; gap: 20px; margin-top: 48px; padding-top: 40px; border-top: 1px solid var(--stroke-secondary); }
       .x-rso { max-width: 100%; max-height: 320px; height: auto; display: block; border: 1px solid var(--stroke-primary); border-radius: var(--r-s); background: #fff; }
     </style>
   </head>
@@ -1249,6 +1250,49 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             </section>
           </div>
           <p class="fineprint">Photos A4 par 5 mm margin ke saath fit hoti hain; PDF pages jaise hain waise judte hain. Password wale PDF ke pages image ban kar judte hain. Sab kuch aapke device par hota hai.</p>
+          <div class="x-sc" id="sc">
+            <div class="head">
+              <p class="head__eyebrow">Smart compress</p>
+              <h2>Smart compress (quality nahi girti)</h2>
+              <p class="head__sub">Har file original se mila kar (SSIM) check hoti hai. Result kabhi original se bada nahi hota; chhota na ho to original hi milta hai.</p>
+            </div>
+            <div class="x-ctrl">
+              <h3>Photos (JPG/PNG)</h3>
+              <label class="x-drop" id="scImgDrop">
+                <input type="file" id="scImg" accept="image/jpeg,image/png,.jpg,.jpeg,.png" multiple />
+                <strong>Photos chunein</strong>
+                <span>Ek saath kai JPG/PNG. Pixel size aur DPI wahi rehte hain, metadata hat jaata hai.</span>
+              </label>
+              <p class="x-status" id="scImgSay" role="status" aria-live="polite"></p>
+              <div class="table-wrap" id="scImgRes" hidden>
+                <table>
+                  <thead><tr><th scope="col">File</th><th scope="col">Pehle</th><th scope="col">Baad mein</th><th scope="col">Bachat</th><th scope="col">Download</th></tr></thead>
+                  <tbody id="scImgRows"></tbody>
+                </table>
+              </div>
+              <div class="links" id="scImgAll" hidden><button class="btn x-primary" type="button" id="scZip">Sab download (ZIP)</button></div>
+            </div>
+            <div class="x-ctrl">
+              <h3>PDF</h3>
+              <div class="x-opts" role="group" aria-label="PDF compress mode">
+                <button class="x-opt" type="button" data-scm="lossless" aria-pressed="true">Lossless</button>
+                <button class="x-opt" type="button" data-scm="smart" aria-pressed="false">Smart (300 DPI)</button>
+              </div>
+              <label class="x-drop" id="scPdfDrop">
+                <input type="file" id="scPdf" accept=".pdf,application/pdf" />
+                <strong>PDF chunein</strong>
+                <span>Lossless: images nahi badalti. Smart: pages 300 DPI JPEG bante hain, sirf tab jab file chhoti ho.</span>
+              </label>
+              <p class="x-status" id="scPdfSay" role="status" aria-live="polite"></p>
+              <section class="stats" id="scPdfRes" hidden>
+                <div class="stat"><span class="stat__fig" id="scBefore">–</span><span class="stat__label">Pehle</span></div>
+                <div class="stat"><span class="stat__fig" id="scAfter">–</span><span class="stat__label">compressed.pdf</span></div>
+                <div class="stat"><span class="stat__fig" id="scSaved">–</span><span class="stat__label">Bachat</span></div>
+              </section>
+              <div class="links" id="scPdfAll" hidden><button class="btn x-primary" type="button" id="scPdfDl">compressed.pdf download</button></div>
+            </div>
+            <p class="fineprint">Quality check: 512 px grey copy par SSIM, JPG ke liye 0.985 aur PNG palette ke liye 0.995 se upar. Smart mode ke baad PDF ka text select nahi hoga.</p>
+          </div>
         </section>
       </main>
       <footer class="foot">
@@ -3431,6 +3475,201 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             if (best.length <= t) say("compressed.pdf taiyaar: " + kb(best) + " KB (target " + t / 1024 + " KB)");
             else say("Target tak nahi pahunch paaye. Sabse chhota: " + kb(best) + " KB", true);
           });
+        });
+
+        // ---------- smart compress ----------
+        var sc = [], scMode = "lossless", scFile = null, scOut = null, scBusy = false, scImgBusy = false, zipP = null, SIG = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+        function sSay(id, t, bad) { var e = $(id); e.textContent = t; e.classList.toggle("is-err", !!bad); }
+        function kbS(n) { var k = n / 1024; return (k < 100 ? k.toFixed(1) : Math.round(k)) + " KB"; }
+        function u8(b) { return b.arrayBuffer().then(function (a) { return new Uint8Array(a); }); }
+        function enc(c, t, q) { return new Promise(function (ok) { c.toBlob(function (b) { ok(u8(b)); }, t, q); }); }
+        function save(blob, name) { var u = URL.createObjectURL(blob), a = document.createElement("a"); a.href = u; a.download = name; a.style.display = "none"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 60000); }
+        function grey(src, w, h) { // 512px grey copy on white
+          var k = Math.min(1, 512 / Math.max(w, h)), c = cnv(w * k, h * k), x = c.getContext("2d"), i;
+          x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.imageSmoothingQuality = "high"; x.drawImage(src, 0, 0, c.width, c.height);
+          var d = x.getImageData(0, 0, c.width, c.height).data, g = new Float32Array(d.length / 4);
+          for (i = 0; i < g.length; i++) g[i] = 0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2];
+          return { g: g, w: c.width, h: c.height };
+        }
+        function gOf(b) { return createImageBitmap(new Blob([b])).then(function (bm) { var g = grey(bm, bm.width, bm.height); bm.close(); return g; }); }
+        function ssim(a, b) { // mean SSIM, 8x8 windows, stride 4
+          if (a.w !== b.w || a.h !== b.h) return 0;
+          var s = 0, n = 0, W = Math.min(8, a.w, a.h), N = W * W, x, y, i, j, p, u, v;
+          for (y = 0; y + W <= a.h; y += 4) for (x = 0; x + W <= a.w; x += 4) {
+            var ma = 0, mb = 0, va = 0, vb = 0, cv = 0;
+            for (j = 0; j < W; j++) for (i = 0; i < W; i++) { p = (y + j) * a.w + x + i; ma += a.g[p]; mb += b.g[p]; }
+            ma /= N; mb /= N;
+            for (j = 0; j < W; j++) for (i = 0; i < W; i++) { p = (y + j) * a.w + x + i; u = a.g[p] - ma; v = b.g[p] - mb; va += u * u; vb += v * v; cv += u * v; }
+            p = N > 1 ? N - 1 : 1; va /= p; vb /= p; cv /= p;
+            s += ((2 * ma * mb + 6.5025) * (2 * cv + 58.5225)) / ((ma * ma + mb * mb + 6.5025) * (va + vb + 58.5225)); n++;
+          }
+          return n ? s / n : 1;
+        }
+        async function bestJpg(c, ref, lim) { // smallest JPEG with SSIM >= 0.985 (binary search on quality)
+          var lo = 0.3, hi = 0.98, best = null, i, q, b;
+          for (i = 0; i < 7; i++) {
+            q = (lo + hi) / 2; b = await enc(c, "image/jpeg", q);
+            if (lim && b.length >= lim) { hi = q; continue; }
+            if (ssim(ref, await gOf(b)) >= 0.985) { best = b; hi = q; } else lo = q;
+          }
+          return best;
+        }
+        // JPEG: segments, DPI/orientation, metadata strip
+        function segs(b) { var a = [], p = 2, L; while (p + 4 <= b.length && b[p] === 0xff && b[p + 1] !== 0xda) { L = b[p + 2] << 8 | b[p + 3]; a.push([b[p + 1], p, p + 2 + L]); p += 2 + L; } return { a: a, p: p }; }
+        function str(b, p, n) { return String.fromCharCode.apply(null, b.subarray(p, p + n)); }
+        function jmeta(b) {
+          var o = 1, jf = null, ex = null;
+          segs(b).a.forEach(function (g) {
+            var p = g[1] + 4;
+            if (g[0] === 0xe0 && str(b, p, 5) === "JFIF\0" && b[p + 7]) jf = [b[p + 7], b[p + 8] << 8 | b[p + 9], b[p + 10] << 8 | b[p + 11]];
+            if (g[0] === 0xe1 && str(b, p, 6) === "Exif\0\0") try {
+              var t = p + 6, le = b[t] === 0x49, R = function (q, n) { var v = 0, i; for (i = 0; i < n; i++) v = le ? v | b[t + q + i] << 8 * i : v << 8 | b[t + q + i]; return v >>> 0; };
+              var f = R(4, 4), n = R(f, 2), xr = 0, yr = 0, un = 2, i, e, tg, rat = function (e) { var q = R(e + 8, 4); return R(q, 4) / (R(q + 4, 4) || 1); };
+              for (i = 0; i < n; i++) { e = f + 2 + 12 * i; tg = R(e, 2); if (tg === 0x112) o = R(e + 8, 2); else if (tg === 0x11a) xr = rat(e); else if (tg === 0x11b) yr = rat(e); else if (tg === 0x128) un = R(e + 8, 2); }
+              if (xr) ex = [un === 3 ? 2 : 1, Math.round(xr), Math.round(yr || xr)];
+            } catch (e) {}
+          });
+          return { o: o, d: jf || ex };
+        }
+        function setDpi(o, d) {
+          if (!d) return o;
+          if (o[3] !== 0xe0) { var n = new Uint8Array(o.length + 18); n.set([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70, 0, 1, 1]); n.set(o.subarray(2), 20); o = n; }
+          o[13] = d[0]; o[14] = d[1] >> 8; o[15] = d[1] & 255; o[16] = d[2] >> 8; o[17] = d[2] & 255; return o;
+        }
+        function jstrip(b, or) { // drop APP1-15 (keeps ICC, and EXIF when rotated) and comments
+          var s = segs(b), parts = [b.subarray(0, 2)]; if (b[s.p + 1] !== 0xda) return null;
+          s.a.forEach(function (g) { var m = g[0], keep = (m === 0xe2 && str(b, g[1] + 4, 11) === "ICC_PROFILE") || (m === 0xe1 && or !== 1); if (!((m > 0xe0 && m <= 0xef && !keep) || m === 0xfe)) parts.push(b.subarray(g[1], g[2])); });
+          parts.push(b.subarray(s.p)); return u8(new Blob(parts));
+        }
+        // PNG: chunks, strip, palette
+        var CRC = []; (function () { for (var n = 0, c, k; n < 256; n++) { c = n; for (k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ c >>> 1 : c >>> 1; CRC[n] = c >>> 0; } })();
+        function chunk(t, d) {
+          var o = new Uint8Array(12 + d.length), v = new DataView(o.buffer), c = -1, i;
+          v.setUint32(0, d.length); for (i = 0; i < 4; i++) o[4 + i] = t.charCodeAt(i); o.set(d, 8);
+          for (i = 4; i < 8 + d.length; i++) c = CRC[(c ^ o[i]) & 255] ^ c >>> 8;
+          v.setUint32(8 + d.length, (c ^ -1) >>> 0); return o;
+        }
+        function pchunks(b) { var a = [], p = 8, v = new DataView(b.buffer, b.byteOffset, b.length), L; while (p + 12 <= b.length) { L = v.getUint32(p); a.push([str(b, p + 4, 4), p, p + 12 + L]); p += 12 + L; } return a; }
+        function pstrip(b) { var parts = [SIG]; pchunks(b).forEach(function (k) { if (!/^(tEXt|zTXt|iTXt|eXIf|tIME)$/.test(k[0])) parts.push(b.subarray(k[1], k[2])); }); return u8(new Blob(parts)); }
+        function withPhys(o, ph) { if (!ph) return o; var n = new Uint8Array(o.length + ph.length); n.set(o.subarray(0, 33)); n.set(ph, 33); n.set(o.subarray(33), 33 + ph.length); return n; }
+        function quant(d) { // exact palette if <= 256 colours, else median cut
+          var n = d.length / 4, idx = new Uint8Array(n), m = new Map(), pal = [], i, k, e;
+          function key(i) { return (d[4 * i] << 24 | d[4 * i + 1] << 16 | d[4 * i + 2] << 8 | d[4 * i + 3]) >>> 0; }
+          for (i = 0; i < n && m.size <= 256; i++) { k = key(i); if (!m.has(k)) m.set(k, m.size); }
+          if (m.size <= 256) { m.forEach(function (v, k) { pal.push([k >>> 24, k >> 16 & 255, k >> 8 & 255, k & 255]); }); for (i = 0; i < n; i++) idx[i] = m.get(key(i)); return { pal: pal, idx: idx }; }
+          var H = new Map(), K = new Uint32Array(n), p;
+          for (i = 0; i < n; i++) { p = 4 * i; k = (d[p] >> 3) << 13 | (d[p + 1] >> 3) << 8 | (d[p + 2] >> 3) << 3 | d[p + 3] >> 5; K[i] = k; e = H.get(k); if (!e) H.set(k, e = [0, 0, 0, 0, 0, 0]); e[0] += d[p]; e[1] += d[p + 1]; e[2] += d[p + 2]; e[3] += d[p + 3]; e[4]++; }
+          function box(b) { var r = 0, ch = 0, c, lo, hi; if (b.length > 1) for (c = 0; c < 4; c++) { lo = 255; hi = 0; b.forEach(function (e) { var v = e[c] / e[4]; if (v < lo) lo = v; if (v > hi) hi = v; }); if (hi - lo > r) { r = hi - lo; ch = c; } } return { b: b, r: r, ch: ch }; }
+          var boxes = [box(Array.from(H.values()))];
+          while (boxes.length < 256) {
+            var bi = -1, br = 0; boxes.forEach(function (x, j) { if (x.r > br) { br = x.r; bi = j; } }); if (bi < 0) break;
+            var X = boxes[bi], ch = X.ch, b = X.b.sort(function (a, c) { return a[ch] / a[4] - c[ch] / c[4]; }), half = b.reduce(function (s, e) { return s + e[4]; }, 0) / 2, tot = 0, cut;
+            for (cut = 0; cut < b.length - 2; cut++) { tot += b[cut][4]; if (tot >= half) break; }
+            boxes.splice(bi, 1, box(b.slice(0, cut + 1)), box(b.slice(cut + 1)));
+          }
+          boxes.forEach(function (x, j) { var s = [0, 0, 0, 0, 0]; x.b.forEach(function (e) { for (var c = 0; c < 5; c++) s[c] += e[c]; e[5] = j; }); pal.push([0, 1, 2, 3].map(function (c) { return Math.round(s[c] / s[4]); })); });
+          for (i = 0; i < n; i++) idx[i] = H.get(K[i])[5];
+          return { pal: pal, idx: idx };
+        }
+        async function palPng(d, w, h, ph) {
+          if (!window.CompressionStream) return null;
+          var q = quant(d), np = q.pal.length, ih = new Uint8Array(13), v = new DataView(ih.buffer), pl = new Uint8Array(np * 3), tr = new Uint8Array(np), la = -1, raw = new Uint8Array((w + 1) * h), y;
+          v.setUint32(0, w); v.setUint32(4, h); ih[8] = 8; ih[9] = 3;
+          q.pal.forEach(function (c, i) { pl.set(c.slice(0, 3), 3 * i); tr[i] = c[3]; if (c[3] < 255) la = i; });
+          for (y = 0; y < h; y++) raw.set(q.idx.subarray(y * w, y * w + w), y * (w + 1) + 1);
+          var z = await u8(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream("deflate"))).blob()), parts = [SIG, chunk("IHDR", ih)];
+          if (ph) parts.push(ph); parts.push(chunk("PLTE", pl)); if (la >= 0) parts.push(chunk("tRNS", tr.subarray(0, la + 1)));
+          parts.push(chunk("IDAT", z), chunk("IEND", new Uint8Array(0))); return u8(new Blob(parts));
+        }
+        async function scPhoto(f) {
+          var b = new Uint8Array(await f.arrayBuffer()), png = b[0] === 0x89 && b[1] === 0x50, jp = b[0] === 0xff && b[1] === 0xd8;
+          if (!png && !jp) throw new Error("sirf JPG/PNG");
+          var bm = await createImageBitmap(new Blob([b])), w = bm.width, h = bm.height, ref = grey(bm, w, h), c = cnv(w, h), x = c.getContext("2d"), best = b, lim = png ? 0.995 : 0.985;
+          x.drawImage(bm, 0, 0); bm.close();
+          async function tryC(o) { if (o && o.length < best.length && ssim(ref, await gOf(o)) >= lim) best = o; }
+          if (jp) { var mt = jmeta(b); await tryC(await jstrip(b, mt.o)); var q = await bestJpg(c, ref, best.length); if (q) await tryC(setDpi(q, mt.d)); }
+          else {
+            var ph = null; pchunks(b).forEach(function (k) { if (k[0] === "pHYs") ph = b.subarray(k[1], k[2]); });
+            await tryC(await pstrip(b)); await tryC(withPhys(await enc(c, "image/png"), ph));
+            try { await tryC(await palPng(x.getImageData(0, 0, w, h).data, w, h, ph)); } catch (e) { console.warn(e); }
+          }
+          return { b: best, t: png ? "image/png" : "image/jpeg" };
+        }
+        async function scPhotos(fs) {
+          fs = fs.filter(function (f) { return /^image\/(jpeg|png)$/.test(f.type) || /\.(jpe?g|png)$/i.test(f.name); });
+          if (!fs.length) return sSay("scImgSay", "Sirf JPG/PNG chunein", true);
+          if (scImgBusy) return; scImgBusy = true; sc = []; $("scImgRows").innerHTML = ""; $("scImgRes").hidden = false; $("scImgAll").hidden = true;
+          var A = 0, Z = 0;
+          for (var i = 0; i < fs.length; i++) {
+            var f = fs[i], tr = document.createElement("tr"), r = null;
+            sSay("scImgSay", "Compress ho raha hai " + (i + 1) + "/" + fs.length + ": " + f.name);
+            try { r = await scPhoto(f); } catch (e) { console.error(e); }
+            var z = r ? r.b.length : f.size, pc = Math.round((1 - z / f.size) * 100); A += f.size; Z += z;
+            sc.push(r && { n: "small_" + f.name, b: r.b, t: r.t });
+            tr.innerHTML = '<th scope="row"></th><td class="num" data-label="Pehle"></td><td class="num" data-label="Baad mein"></td><td data-label="Bachat"></td><td data-label="Download"></td>';
+            tr.cells[0].textContent = f.name; tr.cells[1].textContent = kbS(f.size); tr.cells[2].textContent = "→ " + kbS(z);
+            tr.cells[3].textContent = !r ? "Khul nahi payi" : z < f.size ? pc + "% kam" : "Original rakha"; if (!r || z >= f.size) tr.cells[3].className = "muted";
+            if (r) tr.cells[4].innerHTML = '<button class="btn" type="button" data-sci="' + i + '">Download</button>';
+            $("scImgRows").appendChild(tr);
+          }
+          sSay("scImgSay", fs.length + " file: " + kbS(A) + " → " + kbS(Z) + " (" + Math.round((1 - Z / A) * 100) + "% bachat)");
+          $("scImgAll").hidden = sc.filter(Boolean).length < 2; scImgBusy = false;
+        }
+        $("scImgRows").addEventListener("click", function (e) { var b = e.target.closest("[data-sci]"), r = b && sc[+b.dataset.sci]; if (r) save(new Blob([r.b], { type: r.t }), r.n); });
+        $("scZip").addEventListener("click", async function () {
+          var btn = this; btn.classList.add("x-btn-busy");
+          try {
+            zipP = zipP || new Promise(function (ok, no) {
+              if (window.JSZip) return ok();
+              var s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"; s.onload = ok;
+              s.onerror = function () { zipP = null; no(new Error("JSZip load nahi hua")); }; document.head.appendChild(s);
+            });
+            await zipP; var zip = new window.JSZip(), used = {};
+            sc.forEach(function (r) { if (!r) return; var n = r.n, k = 1; while (used[n]) n = r.n.replace(/(\.[^.]*)?$/, "_" + ++k + "$1"); used[n] = 1; zip.file(n, r.b); });
+            save(await zip.generateAsync({ type: "blob" }), "compressed_photos.zip");
+          } catch (e) { sSay("scImgSay", "ZIP fail: " + err(e), true); }
+          btn.classList.remove("x-btn-busy");
+        });
+        $("scImg").addEventListener("change", function () { scPhotos(Array.from(this.files)); this.value = ""; });
+        async function scPdf() {
+          if (scBusy) return; scBusy = true; $("scPdfRes").hidden = $("scPdfAll").hidden = true;
+          try {
+            var b = new Uint8Array(await scFile.arrayBuffer()), L = await lib(), best = b, lossy = false, locked = false;
+            sSay("scPdfSay", "Lossless: PDF dobara save ho raha hai...");
+            try { var ls = await (await L.PDFDocument.load(b, { updateMetadata: false })).save({ useObjectStreams: true }); if (ls.length < best.length) best = ls; }
+            catch (e) { if (/encrypt/i.test(err(e))) throw new Error("Password/lock wala PDF compress nahi hota"); if (scMode === "lossless") throw e; }
+            if (scMode === "smart") {
+              var PJ = await window.xPP.pdfjs(), task = PJ.getDocument({ data: b.slice() }), out = await L.PDFDocument.create(), ok = true, n;
+              task.onPassword = function () { locked = true; task.destroy(); };
+              var pj = await task.promise.catch(function (e) { throw locked ? new Error("Password wala PDF compress nahi hota") : e; });
+              for (n = 1; n <= pj.numPages && ok; n++) {
+                sSay("scPdfSay", "Smart: page " + n + "/" + pj.numPages + " 300 DPI par...");
+                var pg = await pj.getPage(n), v1 = pg.getViewport({ scale: 1 }), s = Math.min(300 / 72, Math.sqrt(16e6 / (v1.width * v1.height))), vp = pg.getViewport({ scale: s });
+                var c = cnv(vp.width, vp.height), x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+                await pg.render({ canvasContext: x, viewport: vp }).promise;
+                var j = await bestJpg(c, grey(c, c.width, c.height));
+                if (!j) ok = false; else { var im = await out.embedJpg(j); out.addPage([v1.width, v1.height]).drawImage(im, { x: 0, y: 0, width: v1.width, height: v1.height }); }
+                pg.cleanup(); c.width = c.height = 0;
+              }
+              pj.destroy();
+              if (ok) { var sm = await out.save({ useObjectStreams: true }); if (sm.length < best.length) { best = sm; lossy = true; } }
+            }
+            scOut = best; $("scBefore").textContent = kbS(b.length); $("scAfter").textContent = kbS(best.length);
+            $("scSaved").textContent = Math.round((1 - best.length / b.length) * 100) + "%"; $("scPdfRes").hidden = $("scPdfAll").hidden = false;
+            sSay("scPdfSay", kbS(b.length) + " → " + kbS(best.length) + ". " + (best === b ? "Isse chhota nahi ho paaya, original hi rakha." : lossy ? "Smart: pages 300 DPI JPEG bane, quality check pass." : "Lossless: images bilkul nahi badli." + (scMode === "smart" ? " Smart se chhota nahi bana." : "")));
+          } catch (e) { console.error(e); sSay("scPdfSay", "Fail: " + err(e), true); }
+          scBusy = false;
+        }
+        document.querySelectorAll("[data-scm]").forEach(function (b) {
+          b.addEventListener("click", function () { if (scBusy) return; scMode = b.dataset.scm; document.querySelectorAll("[data-scm]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); }); if (scFile) scPdf(); });
+        });
+        $("scPdf").addEventListener("change", function () { if (this.files[0]) { scFile = this.files[0]; scPdf(); } this.value = ""; });
+        $("scPdfDl").addEventListener("click", function () { if (scOut) dl(scOut, "compressed.pdf"); });
+        [["scImgDrop", function (fs) { scPhotos(fs); }], ["scPdfDrop", function (fs) { if (fs[0]) { scFile = fs[0]; scPdf(); } }]].forEach(function (z) {
+          var d = $(z[0]);
+          d.addEventListener("dragover", function (e) { if (e.dataTransfer.types.indexOf("Files") > -1) { e.preventDefault(); d.classList.add("is-over"); } });
+          d.addEventListener("dragleave", function () { d.classList.remove("is-over"); });
+          d.addEventListener("drop", function (e) { e.preventDefault(); d.classList.remove("is-over"); z[1](Array.from(e.dataTransfer.files)); });
         });
       })();
     </script>
