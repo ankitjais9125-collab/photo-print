@@ -886,6 +886,9 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
       body.x-old .main > :not(.hero):not(.x-tabs):not(#old) { display: none !important; }
       body:not(.x-old) #old { display: none !important; }
       .x-oba { max-width: 560px; width: min(100%, calc(70vh * var(--x-ar, 1))); aspect-ratio: var(--x-ar, 1); }
+      body.x-ocr .main > :not(.hero):not(.x-tabs):not(#ocr) { display: none !important; }
+      body:not(.x-ocr) #ocr { display: none !important; }
+      .x-ta { width: 100%; min-height: 280px; padding: 12px; font: var(--type-body); color: var(--text-primary); background: var(--fill-primary-on); border: 1px solid var(--stroke-primary); border-radius: var(--r-s); resize: vertical; }
       .x-rso { max-width: 100%; max-height: 320px; height: auto; display: block; border: 1px solid var(--stroke-primary); border-radius: var(--r-s); background: #fff; }
     </style>
   </head>
@@ -908,6 +911,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           <button class="x-opt" type="button" role="tab" data-tab="rs" aria-pressed="false" aria-selected="false">Photo / Sign Resize</button>
           <button class="x-opt" type="button" role="tab" data-tab="pdf" aria-pressed="false" aria-selected="false">PDF Tools</button>
           <button class="x-opt" type="button" role="tab" data-tab="old" aria-pressed="false" aria-selected="false">Purani Photo</button>
+          <button class="x-opt" type="button" role="tab" data-tab="ocr" aria-pressed="false" aria-selected="false">OCR / Editable</button>
         </div>
 
         <p class="x-strip" aria-label="Steps">
@@ -1349,6 +1353,47 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
               </div>
             </div>
           </div>
+        </section>
+
+        <section class="section" id="ocr">
+          <div class="head">
+            <p class="head__eyebrow">OCR / Editable</p>
+            <h2>Scan ya PDF se text nikaalein: searchable PDF, Word ya TXT.</h2>
+            <p class="head__sub">Hindi aur English dono padhta hai. Sab kuch aapke device par hota hai.</p>
+          </div>
+          <label class="x-drop" id="ocDrop">
+            <input type="file" id="ocFile" accept="image/*,.pdf,application/pdf" multiple />
+            <strong>Photos ya PDF chunein</strong>
+            <span>Ek saath kai files, tap karein ya drag karke chhodein</span>
+          </label>
+          <div class="x-row" id="ocPw" hidden>
+            <label for="ocPwIn">Is PDF ka password daalein</label>
+            <input id="ocPwIn" type="text" autocomplete="off" spellcheck="false" />
+            <button class="btn" type="button" id="ocPwGo">Kholein</button>
+            <span class="x-status is-err" id="ocPwErr" role="alert"></span>
+          </div>
+          <div class="x-ctrl">
+            <h3>Bhasha</h3>
+            <div class="x-opts" id="ocLang" role="group" aria-label="Bhasha">
+              <button class="x-opt" type="button" data-l="hin+eng" aria-pressed="true">Hindi + English</button>
+              <button class="x-opt" type="button" data-l="eng" aria-pressed="false">English</button>
+              <button class="x-opt" type="button" data-l="hin" aria-pressed="false">Hindi</button>
+            </div>
+            <p class="x-status" id="ocList"></p>
+            <div class="links"><button class="btn x-primary" type="button" id="ocGo" disabled>Text nikaalein</button></div>
+            <p class="x-status" id="ocSay" role="status" aria-live="polite"></p>
+            <div class="x-bar" aria-hidden="true"><span id="ocBar"></span></div>
+          </div>
+          <div class="x-ctrl" id="ocOut" hidden>
+            <div class="links">
+              <button class="btn x-primary" type="button" id="ocPdf">Searchable PDF</button>
+              <button class="btn x-primary" type="button" id="ocDocx">Word (.docx)</button>
+              <button class="btn" type="button" id="ocTxt">TXT</button>
+              <button class="btn" type="button" id="ocCopy">Copy</button>
+            </div>
+            <textarea class="x-ta" id="ocText" aria-label="Nikla hua text" spellcheck="false"></textarea>
+          </div>
+          <p class="fineprint">Dhyan dein: table aur layout Word mein bilkul same nahi aayega. Saaf, seedha scan ho to sabse accha result milta hai. Searchable PDF mein page waisa hi dikhta hai, bas text select aur search ho jaata hai.</p>
         </section>
       </main>
       <footer class="foot">
@@ -3939,6 +3984,162 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         }
         $("oPng").addEventListener("click", function () { dl(this, true); });
         $("oJpg").addEventListener("click", function () { dl(this, false); });
+      })();
+    </script>
+    <script>
+      // ---------- OCR / Editable: searchable PDF, Word, TXT ----------
+      (function () {
+        var $ = function (i) { return document.getElementById(i); };
+        var TS = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js", PL = "https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js", DX = "https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js";
+        var files = [], lang = "hin+eng", wP = null, wL = "", pwK = null, pages = [], pi = 0, pn = 1, busy = false;
+        document.querySelectorAll("[data-tab]").forEach(function (b) {
+          b.addEventListener("click", function () { document.body.classList.toggle("x-ocr", b.dataset.tab === "ocr"); });
+        });
+        function say(t, bad) { var e = $("ocSay"); e.textContent = t; e.classList.toggle("is-err", !!bad); }
+        function bar(p) { $("ocBar").style.width = Math.round(p * 100) + "%"; }
+        function cnv(w, h) { var c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; }
+        function load(src, g) {
+          return window[g] ? Promise.resolve(window[g]) : new Promise(function (ok, bad) {
+            var s = document.createElement("script"); s.src = src; s.onload = function () { ok(window[g]); };
+            s.onerror = function () { bad(new Error(g + " load nahi hua")); }; document.head.appendChild(s);
+          });
+        }
+        function worker() {
+          if (wP && wL === lang) return wP;
+          if (wP) wP.then(function (w) { w.terminate(); }).catch(function () {});
+          wL = lang;
+          wP = load(TS, "Tesseract").then(function (T) {
+            return T.createWorker(lang, 1, { logger: function (m) {
+              if (m.status === "recognizing text") bar((pi + m.progress) / pn);
+              else if (/load/.test(m.status)) say("Bhasha data load ho raha hai (" + lang + ")...");
+            } });
+          }).then(function (w) { return w.setParameters({ user_defined_dpi: "300", preserve_interword_spaces: "1" }).then(function () { return w; }); });
+          wP.catch(function () { wP = null; });
+          return wP;
+        }
+        function blob(c, type) { return new Promise(function (ok) { c.toBlob(function (b) { b.arrayBuffer().then(function (a) { ok(new Uint8Array(a)); }); }, type, 0.92); }); }
+        function dl(data, name, type) {
+          var u = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type: type })), a = document.createElement("a");
+          a.href = u; a.download = name; a.style.display = "none"; document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+        }
+        async function imgC(f) {
+          var u = URL.createObjectURL(f), im = new Image(); im.src = u; await im.decode();
+          var k = Math.min(1, 4000 / Math.max(im.naturalWidth, im.naturalHeight)), c = cnv(im.naturalWidth * k, im.naturalHeight * k), x = c.getContext("2d");
+          x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u); return c;
+        }
+        // ---------- files, language, password ----------
+        function setFiles(l) {
+          files = Array.prototype.filter.call(l, function (f) { return /^image\//.test(f.type) || f.type === "application/pdf" || /\.pdf$/i.test(f.name); });
+          $("ocList").textContent = files.length ? files.length + " file: " + files.map(function (f) { return f.name; }).join(", ") : "Sirf photo ya PDF chalega.";
+          $("ocGo").disabled = !files.length;
+        }
+        $("ocFile").addEventListener("change", function () { setFiles(this.files); });
+        var drop = $("ocDrop");
+        drop.addEventListener("dragover", function (e) { e.preventDefault(); drop.classList.add("is-over"); });
+        drop.addEventListener("dragleave", function () { drop.classList.remove("is-over"); });
+        drop.addEventListener("drop", function (e) { e.preventDefault(); drop.classList.remove("is-over"); setFiles(e.dataTransfer.files); });
+        $("ocLang").addEventListener("click", function (e) {
+          var b = e.target.closest("[data-l]"); if (!b) return; lang = b.dataset.l;
+          this.querySelectorAll("[data-l]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+        });
+        function pwGo() { if (pwK) { var k = pwK; pwK = null; k($("ocPwIn").value); $("ocPwErr").textContent = ""; } }
+        $("ocPwIn").addEventListener("keydown", function (e) { if (e.key === "Enter") pwGo(); });
+        $("ocPwGo").addEventListener("click", pwGo);
+        async function openPdf(f, L) {
+          var bytes = new Uint8Array(await f.arrayBuffer()), PJ = await window.xPP.pdfjs(), task = PJ.getDocument({ data: bytes.slice() }), asked = false, lib = null;
+          task.onPassword = function (upd, why) {
+            asked = true; $("ocPw").hidden = false; $("ocPwErr").textContent = why === PJ.PasswordResponses.INCORRECT_PASSWORD ? "Password galat hai" : "";
+            $("ocPwIn").value = ""; $("ocPwIn").focus(); say(f.name + ": password chahiye"); pwK = upd;
+          };
+          var pj = await task.promise; $("ocPw").hidden = true; pwK = null;
+          if (!asked) try { lib = await L.PDFDocument.load(bytes); } catch (e) { console.warn(e); }
+          return { pj: pj, lib: lib };
+        }
+        function paras(d) {
+          var out = [];
+          (d.blocks || []).forEach(function (b) { (b.paragraphs || []).forEach(function (p) {
+            var t = (p.lines || []).map(function (l) { return l.text.trim(); }).filter(Boolean).join(" ");
+            if (t) out.push(t);
+          }); });
+          return out.length ? out : (d.text || "").split(/\n\s*\n/).map(function (t) { return t.replace(/\s*\n\s*/g, " ").trim(); }).filter(Boolean);
+        }
+        // ---------- OCR run ----------
+        $("ocGo").addEventListener("click", async function () {
+          if (busy || !files.length) return;
+          busy = true; this.disabled = true; $("ocOut").hidden = true; pages = []; bar(0);
+          try {
+            var L = await load(PL, "PDFLib"), src = [], i;
+            for (i = 0; i < files.length; i++) {
+              var f = files[i];
+              if (/^image\//.test(f.type)) { src.push({ f: f }); continue; }
+              say(f.name + ": PDF khul raha hai...");
+              var o = await openPdf(f, L);
+              for (var n = 0; n < o.pj.numPages; n++) src.push({ pj: o.pj, lib: o.lib, n: n });
+            }
+            pn = src.length; say("OCR shuru ho raha hai...");
+            var w = await worker();
+            for (i = 0; i < pn; i++) {
+              var s = src[i], pg = {}, c;
+              pi = i; bar(i / pn); say("Page " + (i + 1) + "/" + pn + " padh raha hai...");
+              if (s.pj) {
+                var p = await s.pj.getPage(s.n + 1), vp = p.getViewport({ scale: 300 / 72 }); c = cnv(vp.width, vp.height);
+                var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+                await p.render({ canvasContext: x, viewport: vp }).promise;
+                pg.w = vp.width * 72 / 300; pg.h = vp.height * 72 / 300;
+                if (s.lib && !s.lib.getPage(s.n).getRotation().angle) { pg.lib = s.lib; pg.n = s.n; } else pg.img = await blob(c, "image/jpeg");
+              } else {
+                c = await imgC(s.f); pg.w = c.width * 72 / 300; pg.h = c.height * 72 / 300;
+                pg.png = s.f.type === "image/png"; pg.img = await blob(c, pg.png ? "image/png" : "image/jpeg");
+              }
+              var d = (await w.recognize(c, { pdfTitle: "ocr", pdfTextOnly: true }, { text: true, blocks: true, pdf: true })).data;
+              pg.pdf = d.pdf ? new Uint8Array(d.pdf) : null; pg.paras = paras(d); pg.text = (d.text || "").trim();
+              pages.push(pg); c.width = c.height = 0;
+            }
+            $("ocText").value = pages.map(function (p, k) { return (pn > 1 ? "--- Page " + (k + 1) + " ---\n" : "") + p.text; }).join("\n\n");
+            $("ocOut").hidden = false; bar(1); say("Ho gaya: " + pn + " page padhe gaye. Neeche se download karein.");
+          } catch (e) { console.error(e); say("OCR nahi hua: " + ((e && e.message) || e), true); }
+          finally { busy = false; this.disabled = false; }
+        });
+        // ---------- outputs ----------
+        async function run(btn, fn) {
+          if (busy || !pages.length) return; busy = true; btn.disabled = true;
+          try { await fn(); } catch (e) { console.error(e); say("File nahi bani: " + ((e && e.message) || e), true); }
+          finally { busy = false; btn.disabled = false; }
+        }
+        $("ocPdf").addEventListener("click", function () { run(this, async function () {
+          say("Searchable PDF ban raha hai...");
+          var L = await load(PL, "PDFLib"), out = await L.PDFDocument.create(), miss = 0;
+          for (var i = 0; i < pages.length; i++) {
+            var pg = pages[i], p, b;
+            if (pg.lib) { p = out.addPage((await out.copyPages(pg.lib, [pg.n]))[0]); b = p.getCropBox(); }
+            else {
+              p = out.addPage([pg.w, pg.h]); b = { x: 0, y: 0, width: pg.w, height: pg.h };
+              p.drawImage(pg.png ? await out.embedPng(pg.img) : await out.embedJpg(pg.img), b);
+            }
+            if (pg.pdf) p.drawPage((await out.embedPdf(pg.pdf))[0], b); else miss++;
+          }
+          dl(await out.save(), "ocr.pdf", "application/pdf");
+          say(miss ? "ocr.pdf bana, par " + miss + " page par text layer nahi lag paayi." : "ocr.pdf download ho raha hai.");
+        }); });
+        $("ocDocx").addEventListener("click", function () { run(this, async function () {
+          say("Word file ban rahi hai...");
+          var D = await load(DX, "docx"), kids = [];
+          pages.forEach(function (pg, i) {
+            (pg.paras.length ? pg.paras : [""]).forEach(function (t, j) {
+              kids.push(new D.Paragraph({ pageBreakBefore: i > 0 && j === 0, spacing: { after: 120 },
+                children: [new D.TextRun(/[\u0900-\u097F]/.test(t) ? { text: t, font: "Nirmala UI" } : { text: t })] }));
+            });
+          });
+          dl(await D.Packer.toBlob(new D.Document({ sections: [{ children: kids }] })), "ocr.docx");
+          say("ocr.docx download ho raha hai.");
+        }); });
+        $("ocTxt").addEventListener("click", function () { dl("\ufeff" + $("ocText").value, "ocr.txt", "text/plain;charset=utf-8"); });
+        $("ocCopy").addEventListener("click", function () {
+          var t = $("ocText");
+          (navigator.clipboard ? navigator.clipboard.writeText(t.value) : Promise.reject()).catch(function () { t.select(); document.execCommand("copy"); })
+            .then(function () { say("Text copy ho gaya."); });
+        });
       })();
     </script>
   </body>
