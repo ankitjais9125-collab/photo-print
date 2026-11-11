@@ -876,6 +876,11 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
       .x-si .x-row { flex-wrap: nowrap; }
       .x-si .x-row input { width: 56px; }
       .x-si .x-opt { justify-content: center; width: var(--tap); padding: 0; }
+      body.x-pdf .main > :not(.hero):not(.x-tabs):not(#pdft) { display: none !important; }
+      body:not(.x-pdf) #pdft { display: none !important; }
+      .x-di[draggable="true"] { cursor: grab; }
+      .x-di.is-drag { opacity: 0.5; }
+      .x-di .x-opt { justify-content: center; min-width: var(--tap); padding: 5px 10px; }
       .x-rso { max-width: 100%; max-height: 320px; height: auto; display: block; border: 1px solid var(--stroke-primary); border-radius: var(--r-s); background: #fff; }
     </style>
   </head>
@@ -896,6 +901,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           <button class="x-opt" type="button" role="tab" data-tab="pp" aria-pressed="true" aria-selected="true">Passport Photo</button>
           <button class="x-opt" type="button" role="tab" data-tab="doc" aria-pressed="false" aria-selected="false">Document Print</button>
           <button class="x-opt" type="button" role="tab" data-tab="rs" aria-pressed="false" aria-selected="false">Photo / Sign Resize</button>
+          <button class="x-opt" type="button" role="tab" data-tab="pdf" aria-pressed="false" aria-selected="false">PDF Tools</button>
         </div>
 
         <p class="x-strip" aria-label="Steps">
@@ -1109,9 +1115,9 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             <p class="head__sub">px, mm, cm ya inch mein size, aur 20 se 50 KB jaisi limit ke andar file.</p>
           </div>
           <label class="x-drop" id="rsDrop">
-            <input type="file" id="rsFile" accept="image/*" />
+            <input type="file" id="rsFile" accept="image/*" multiple />
             <strong>Photo ya signature chunein</strong>
-            <span>Yahan tap karein ya image drag karke chhodein</span>
+            <span>Yahan tap karein ya image drag karke chhodein. Kai photo ek saath bhi chun sakte hain.</span>
           </label>
           <p class="x-status" id="rsSay" role="status" aria-live="polite"></p>
           <div class="x-rsw" id="rsWork" hidden>
@@ -1141,6 +1147,8 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
                   <button class="x-opt" type="button" data-p="cm,3.5,1.5" aria-pressed="false">Signature 3.5×1.5 cm</button>
                   <button class="x-opt" type="button" data-p="px,350,350" aria-pressed="false">UPSC 350×350 px</button>
                   <button class="x-opt" type="button" data-p="inch,2,2" aria-pressed="false">2×2 inch</button>
+                  <button class="x-opt" type="button" data-p="px,240,240,20,50" aria-pressed="false">Thumb (240x240 px, 20-50 KB)</button>
+                  <button class="x-opt" type="button" data-p="px,800,400,50,100,ink" aria-pressed="false">Declaration (800x400 px, 50-100 KB)</button>
                 </div>
               </div>
               <div>
@@ -1187,9 +1195,55 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
               <div class="stat"><span class="stat__fig" id="rsKb">–</span><span class="stat__label">KB</span></div>
             </section>
             <p class="x-status" id="rsNote" role="status" aria-live="polite"></p>
-            <div class="links"><button class="btn x-primary" type="button" id="rsDl">Download</button></div>
+            <p class="x-status" id="rsMulti" hidden></p>
+            <div class="links"><button class="btn x-primary" type="button" id="rsDl">Download</button><button class="btn" type="button" id="rsZip" hidden>Sab download (ZIP)</button></div>
           </div>
           <p class="fineprint">Image aapke device par hi resize hoti hai. JPG/PNG mein DPI likha jaata hai, taki print sahi mm mein aaye.</p>
+        </section>
+
+        <section class="section" id="pdft">
+          <div class="head">
+            <p class="head__eyebrow">PDF Tools</p>
+            <h2>Photos aur PDF jodein, page alag karein, ya PDF ka size chhota karein.</h2>
+            <p class="head__sub">Pages ko drag karke ya ↑ ↓ se aage-peeche karein, ghumaayein ya hatayein.</p>
+          </div>
+          <label class="x-drop" id="pdfDrop">
+            <input type="file" id="pdfFile" accept="image/*,.pdf,application/pdf" multiple />
+            <strong>Photos ya PDF chunein</strong>
+            <span>Ek saath kai files, tap karein ya drag karke chhodein</span>
+          </label>
+          <div class="x-row" id="pdfPw" hidden>
+            <label for="pdfPwIn">Is PDF ka password daalein</label>
+            <input id="pdfPwIn" type="text" autocomplete="off" spellcheck="false" />
+            <button class="btn" type="button" id="pdfPwGo">Kholein</button>
+            <span class="x-status is-err" id="pdfPwErr" role="alert"></span>
+          </div>
+          <p class="x-status" id="pdfSay" role="status" aria-live="polite"></p>
+          <div class="x-dl" id="pdfList"></div>
+          <div class="x-ctrl" id="pdfAct" hidden>
+            <div>
+              <h3>Sab pages ek PDF mein</h3>
+              <button class="btn x-primary" type="button" id="pdfMerge">PDF banayein / Jodein</button>
+            </div>
+            <div>
+              <h3>Sirf kuch pages</h3>
+              <div class="x-fl">
+                <label>Page number <input class="x-wide" id="pdfRange" type="text" placeholder="1-3,5" /></label>
+                <button class="btn" type="button" id="pdfSplit">Page alag karein</button>
+              </div>
+            </div>
+            <div>
+              <h3>File size kam karein</h3>
+              <div class="x-fl">
+                <label>Target KB <input id="pdfKB" type="number" min="10" step="1" value="200" /></label>
+                <button class="btn" type="button" id="pdfShrink">Size chhota karein</button>
+              </div>
+            </div>
+            <section class="stats" id="pdfRes" hidden>
+              <div class="stat"><span class="stat__fig" id="pdfKBOut">–</span><span class="stat__label">compressed.pdf ka size</span></div>
+            </section>
+          </div>
+          <p class="fineprint">Photos A4 par 5 mm margin ke saath fit hoti hain; PDF pages jaise hain waise judte hain. Password wale PDF ke pages image ban kar judte hain. Sab kuch aapke device par hota hai.</p>
         </section>
       </main>
       <footer class="foot">
@@ -2699,6 +2753,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           }
           return pdfP;
         }
+        window.xPP.pdfjs = loadPdfJs;
         function pwGo() { if (pwOk) { var k = pwOk; pwOk = null; k($("docPwIn").value.trim()); $("docPwErr").textContent = ""; } }
         $("docPwIn").addEventListener("input", function () { var p = this.selectionStart; this.value = this.value.toUpperCase(); this.setSelectionRange(p, p); });
         $("docPwIn").addEventListener("keydown", function (e) { if (e.key === "Enter") pwGo(); });
@@ -2994,7 +3049,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           }
           return { c: c, a: a, q: q, sc: sc, mn: mn, mx: mx };
         }
-        function go() { if (!S.img) return; drawPrev(); clearTimeout(tm); tm = setTimeout(run, 250); }
+        function go() { if (!S.img || busy) return; drawPrev(); clearTimeout(tm); tm = setTimeout(run, 250); }
         async function run() {
           var my = ++tok; say("rsSay", "Ban raha hai...");
           try {
@@ -3014,31 +3069,72 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             $("rsOut").hidden = false; say("rsSay", "Taiyaar.");
           } catch (e) { console.error(e); say("rsSay", "Resize fail: " + ((e && e.message) || e), true); }
         }
-        function load(f) {
-          if (!f || !/^image\//.test(f.type)) { say("rsSay", "Sirf image file (JPG/PNG) chunein.", true); return; }
-          var fr = new FileReader();
-          fr.onload = function () {
-            var im = new Image();
-            im.onload = function () {
-              var k = Math.min(1, 4000 / Math.max(im.naturalWidth, im.naturalHeight)), c = cnv(im.naturalWidth * k, im.naturalHeight * k), x = c.getContext("2d");
-              x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.imageSmoothingQuality = "high"; x.drawImage(im, 0, 0, c.width, c.height);
-              S.img = c; S.ink = null; S.cx = c.width / 2; S.cy = c.height / 2;
-              $("rsWork").hidden = false; go();
+        function decode(f) {
+          return new Promise(function (ok, no) {
+            var fr = new FileReader();
+            fr.onload = function () {
+              var im = new Image();
+              im.onload = function () {
+                var k = Math.min(1, 4000 / Math.max(im.naturalWidth, im.naturalHeight)), c = cnv(im.naturalWidth * k, im.naturalHeight * k), x = c.getContext("2d");
+                x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.imageSmoothingQuality = "high"; x.drawImage(im, 0, 0, c.width, c.height); ok(c);
+              };
+              im.onerror = no; im.src = fr.result;
             };
-            im.onerror = function () { say("rsSay", "Ye image khul nahi rahi. Koi aur JPG/PNG try karein.", true); };
-            im.src = fr.result;
-          };
-          fr.readAsDataURL(f);
+            fr.onerror = no; fr.readAsDataURL(f);
+          });
         }
+        var files = [], busy = false;
+        function load(list) {
+          var fs = [].filter.call(list || [], function (f) { return /^image\//.test(f.type); });
+          if (!fs.length) { say("rsSay", "Sirf image file (JPG/PNG) chunein.", true); return; }
+          files = fs; $("rsZip").hidden = $("rsMulti").hidden = fs.length < 2;
+          $("rsMulti").textContent = fs.length + " photo chuni gayi. Preview pehli photo ka hai; yahi settings sab par lagengi.";
+          decode(fs[0]).then(function (c) {
+            S.img = c; S.ink = null; S.cx = c.width / 2; S.cy = c.height / 2;
+            $("rsWork").hidden = false; go();
+          }, function () { say("rsSay", "Ye image khul nahi rahi. Koi aur JPG/PNG try karein.", true); });
+        }
+        var zipLib = null;
+        function jszip() {
+          return zipLib || (zipLib = new Promise(function (ok, no) {
+            if (window.JSZip) return ok(window.JSZip);
+            var s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js";
+            s.onload = function () { ok(window.JSZip); }; s.onerror = function () { zipLib = null; no(new Error("JSZip load nahi hua")); };
+            document.head.appendChild(s);
+          }));
+        }
+        $("rsZip").addEventListener("click", async function () {
+          if (busy || files.length < 2 || !S.img) return;
+          var keep = { img: S.img, ink: S.ink, cx: S.cx, cy: S.cy }, fx = S.cx / S.img.width, fy = S.cy / S.img.height, ext = S.fmt === "png" ? "png" : "jpg", bad = 0;
+          busy = true; clearTimeout(tm); tok++; this.disabled = true;
+          try {
+            var JSZip = await jszip(), zip = new JSZip();
+            for (var i = 0; i < files.length; i++) {
+              say("rsSay", "ZIP ban raha hai: " + (i + 1) + " / " + files.length);
+              try {
+                var c = i === 0 ? keep.img : await decode(files[i]);
+                S.img = c; S.ink = i === 0 ? keep.ink : null; S.cx = fx * c.width; S.cy = fy * c.height;
+                zip.file("resized_" + (i + 1) + "." + ext, (await encode(tgt())).a);
+              } catch (e) { bad++; }
+            }
+            var blob = await zip.generateAsync({ type: "blob" }), a = document.createElement("a");
+            a.href = URL.createObjectURL(blob); a.download = "resized.zip"; a.style.display = "none";
+            document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+            say("rsSay", "ZIP taiyaar: " + (files.length - bad) + " photo." + (bad ? " " + bad + " photo khul nahi payi." : ""), !!bad);
+          } catch (e) { console.error(e); say("rsSay", "ZIP fail: " + ((e && e.message) || e), true); }
+          S.img = keep.img; S.ink = keep.ink; S.cx = keep.cx; S.cy = keep.cy; busy = false; this.disabled = false; drawPrev();
+        });
         function press(sel, b) { document.querySelectorAll(sel).forEach(function (o) { o.setAttribute("aria-pressed", String(o === b)); }); }
         var drop = $("rsDrop");
-        $("rsFile").addEventListener("change", function () { load(this.files[0]); this.value = ""; });
+        $("rsFile").addEventListener("change", function () { load([].slice.call(this.files)); this.value = ""; });
         ["dragenter", "dragover"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("is-over"); }); });
         ["dragleave", "drop"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("is-over"); }); });
-        drop.addEventListener("drop", function (e) { if (e.dataTransfer) load(e.dataTransfer.files[0]); });
+        drop.addEventListener("drop", function (e) { if (e.dataTransfer) load(e.dataTransfer.files); });
         document.querySelectorAll("[data-p]").forEach(function (b) {
           b.addEventListener("click", function () {
             var p = b.dataset.p.split(","); unit.value = prevU = p[0]; W.value = p[1]; H.value = p[2]; S.r = p[1] / p[2];
+            if (p[3]) { $("rsMin").value = p[3]; $("rsMax").value = p[4]; S.fmt = "jpg"; press("[data-fmt]", document.querySelector('[data-fmt="jpg"]')); }
+            if (p[5]) $("rsInk").checked = true;
             press("[data-p]", b); go();
           });
         });
@@ -3100,6 +3196,186 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           if (!S.uri) return;
           var a = document.createElement("a"); a.href = S.uri; a.download = S.fmt === "png" ? "resized.png" : "resized.jpg"; a.style.display = "none";
           document.body.appendChild(a); a.click(); a.remove();
+        });
+      })();
+    </script>
+    <script>
+      (function () {
+        var $ = function (i) { return document.getElementById(i); };
+        var pages = [], libP = null, pwK = null, from = -1, A4 = [595.28, 841.89], M = 5 * 72 / 25.4;
+        document.querySelectorAll("[data-tab]").forEach(function (b) {
+          b.addEventListener("click", function () { document.body.classList.toggle("x-pdf", b.dataset.tab === "pdf"); });
+        });
+        function say(t, bad) { var e = $("pdfSay"); e.textContent = t; e.classList.toggle("is-err", !!bad); }
+        function err(e) { return (e && e.message) || String(e); }
+        function cnv(w, h) { var c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; }
+        function lib() {
+          if (!libP) {
+            libP = new Promise(function (ok, bad) {
+              if (window.PDFLib) return ok();
+              var s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"; s.onload = ok;
+              s.onerror = function () { bad(new Error("pdf-lib load nahi hua")); }; document.head.appendChild(s);
+            }).then(function () { return window.PDFLib; });
+            libP.catch(function () { libP = null; });
+          }
+          return libP;
+        }
+        function rotC(c, d) {
+          if (!d) return c;
+          var s = d % 180 ? cnv(c.height, c.width) : cnv(c.width, c.height), x = s.getContext("2d");
+          x.translate(s.width / 2, s.height / 2); x.rotate(d * Math.PI / 180); x.drawImage(c, -c.width / 2, -c.height / 2); return s;
+        }
+        function shrink(c, k) { if (k >= 1) return c; var t = cnv(c.width * k, c.height * k), x = t.getContext("2d"); x.imageSmoothingQuality = "high"; x.drawImage(c, 0, 0, t.width, t.height); return t; }
+        function fitA4(c, dpi) { return shrink(c, Math.min((A4[0] - 2 * M) / 72 * dpi / c.width, (A4[1] - 2 * M) / 72 * dpi / c.height)); }
+        function jpg(c, q) { return new Promise(function (ok) { c.toBlob(function (b) { b.arrayBuffer().then(function (a) { ok(new Uint8Array(a)); }); }, "image/jpeg", q); }); }
+        async function render(p, dpi) {
+          var pg = await p.f.pj.getPage(p.n + 1), vp = pg.getViewport({ scale: dpi / 72, rotation: (pg.rotate + p.rot) % 360 });
+          var c = cnv(vp.width, vp.height), x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+          await pg.render({ canvasContext: x, viewport: vp }).promise;
+          return { c: c, pw: vp.width * 72 / dpi, ph: vp.height * 72 / dpi, m: 0 };
+        }
+        async function put(out, r, q) {
+          var im = await out.embedJpg(await jpg(r.c, q)), k = Math.min((r.pw - 2 * r.m) / r.c.width, (r.ph - 2 * r.m) / r.c.height), w = r.c.width * k, h = r.c.height * k;
+          out.addPage([r.pw, r.ph]).drawImage(im, { x: (r.pw - w) / 2, y: (r.ph - h) / 2, width: w, height: h });
+        }
+        function imgR(p, dpi) { var c = rotC(p.img, p.rot); return { c: dpi ? fitA4(c, dpi) : c, pw: A4[0], ph: A4[1], m: M }; }
+        async function build(list) { // pages as-is
+          var L = await lib(), out = await L.PDFDocument.create();
+          for (var i = 0; i < list.length; i++) {
+            var p = list[i]; say("Page " + (i + 1) + "/" + list.length + " jud raha hai...");
+            if (p.img) await put(out, imgR(p), 0.92);
+            else if (!p.f.lib) await put(out, await render(p, 150), 0.85);
+            else { var cp = (await out.copyPages(p.f.lib, [p.n]))[0]; cp.setRotation(L.degrees((cp.getRotation().angle + p.rot) % 360)); out.addPage(cp); }
+          }
+          return out.save();
+        }
+        async function rasters(dpi) {
+          var a = [];
+          for (var i = 0; i < pages.length; i++) { say(dpi + " DPI: page " + (i + 1) + "/" + pages.length + "..."); a.push(pages[i].img ? imgR(pages[i], dpi) : await render(pages[i], dpi)); }
+          return a;
+        }
+        async function fromR(a, q) { var L = await lib(), out = await L.PDFDocument.create(); for (var i = 0; i < a.length; i++) await put(out, a[i], q); return out.save(); }
+        function dl(bytes, name) {
+          var u = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })), a = document.createElement("a");
+          a.href = u; a.download = name; a.style.display = "none"; document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+        }
+        function kb(b) { return Math.round(b.length / 1024); }
+        function thumb(c) { return shrink(c, Math.min(1, 200 / Math.max(c.width, c.height))); }
+
+        // ---------- files ----------
+        function pwGo() { if (pwK) { var k = pwK; pwK = null; k($("pdfPwIn").value); $("pdfPwErr").textContent = ""; } }
+        $("pdfPwIn").addEventListener("keydown", function (e) { if (e.key === "Enter") pwGo(); });
+        $("pdfPwGo").addEventListener("click", pwGo);
+        async function addImg(f) {
+          var u = URL.createObjectURL(f), im = new Image(); im.src = u; await im.decode();
+          var k = Math.min(1, 3000 / Math.max(im.naturalWidth, im.naturalHeight)), c = cnv(im.naturalWidth * k, im.naturalHeight * k), x = c.getContext("2d");
+          x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u);
+          pages.push({ name: f.name, img: c, rot: 0, tc: thumb(c) });
+        }
+        async function addPdf(f) {
+          say(f.name + ": PDF khul raha hai...");
+          var bytes = new Uint8Array(await f.arrayBuffer()), PJ = await window.xPP.pdfjs(), task = PJ.getDocument({ data: bytes.slice() }), asked = false;
+          task.onPassword = function (upd, why) {
+            asked = true; $("pdfPw").hidden = false; $("pdfPwErr").textContent = why === PJ.PasswordResponses.INCORRECT_PASSWORD ? "Password galat hai" : "";
+            $("pdfPwIn").value = ""; $("pdfPwIn").focus(); say(f.name + ": password chahiye"); pwK = upd;
+          };
+          var pj = await task.promise, src = { pj: pj, lib: null };
+          $("pdfPw").hidden = true; pwK = null;
+          if (!asked) try { src.lib = await (await lib()).PDFDocument.load(bytes); } catch (e) { console.warn(e); }
+          for (var n = 0; n < pj.numPages; n++) {
+            say(f.name + ": page " + (n + 1) + "/" + pj.numPages);
+            var p = { name: f.name + " · p" + (n + 1), f: src, n: n, rot: 0 }; p.tc = (await render(p, 24)).c; pages.push(p);
+          }
+        }
+        async function add(files) {
+          for (var i = 0; i < files.length; i++) {
+            var f = files[i];
+            try {
+              if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) await addPdf(f);
+              else if (/^image\//.test(f.type)) await addImg(f);
+              else { say(f.name + ": sirf photo ya PDF chalega", true); continue; }
+              draw();
+            } catch (e) { console.error(e); say(f.name + ": " + err(e), true); }
+          }
+          if (pages.length) say(pages.length + " page taiyaar.");
+        }
+        $("pdfFile").addEventListener("change", function () { add(Array.from(this.files)); this.value = ""; });
+        var drop = $("pdfDrop");
+        drop.addEventListener("dragover", function (e) { if (e.dataTransfer.types.indexOf("Files") > -1) { e.preventDefault(); drop.classList.add("is-over"); } });
+        drop.addEventListener("dragleave", function () { drop.classList.remove("is-over"); });
+        drop.addEventListener("drop", function (e) { e.preventDefault(); drop.classList.remove("is-over"); add(Array.from(e.dataTransfer.files)); });
+
+        // ---------- page list ----------
+        function move(a, b) { if (b < 0 || b >= pages.length || a === b) return; pages.splice(b, 0, pages.splice(a, 1)[0]); draw(); }
+        function draw() {
+          var L = $("pdfList"); L.innerHTML = ""; $("pdfAct").hidden = !pages.length;
+          pages.forEach(function (p, i) {
+            var d = document.createElement("div"), im = document.createElement("img"), cap = document.createElement("p"), row = document.createElement("div");
+            d.className = "x-di"; d.draggable = true; d.dataset.i = i;
+            im.className = "x-th"; im.alt = "Page " + (i + 1) + " thumbnail"; im.src = rotC(p.tc, p.rot).toDataURL("image/jpeg", 0.8);
+            cap.className = "x-status"; cap.textContent = (i + 1) + ". " + p.name + (p.f && !p.f.lib ? " (image ban kar judega)" : "");
+            row.className = "x-opts";
+            [["up", "↑", "Upar"], ["down", "↓", "Neeche"], ["rot", "⟳ 90°", "Ghumaayein"], ["del", "Hatayein", "Hatayein"]].forEach(function (b) {
+              var x = document.createElement("button"); x.type = "button"; x.className = "x-opt"; x.dataset.a = b[0]; x.dataset.i = i; x.textContent = b[1]; x.setAttribute("aria-label", b[2] + ": page " + (i + 1)); row.appendChild(x);
+            });
+            d.append(im, cap, row); L.appendChild(d);
+          });
+        }
+        var list = $("pdfList");
+        list.addEventListener("click", function (e) {
+          var b = e.target.closest("[data-a]"); if (!b) return;
+          var i = +b.dataset.i, a = b.dataset.a;
+          if (a === "up") move(i, i - 1); else if (a === "down") move(i, i + 1);
+          else if (a === "rot") { pages[i].rot = (pages[i].rot + 90) % 360; draw(); }
+          else { pages.splice(i, 1); draw(); }
+        });
+        list.addEventListener("dragstart", function (e) { var d = e.target.closest(".x-di"); if (!d) return; from = +d.dataset.i; d.classList.add("is-drag"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", d.dataset.i); });
+        list.addEventListener("dragover", function (e) { if (from > -1) e.preventDefault(); });
+        list.addEventListener("drop", function (e) { var d = e.target.closest(".x-di"); if (from < 0 || !d) return; e.preventDefault(); var a = from; from = -1; move(a, +d.dataset.i); });
+        list.addEventListener("dragend", function () { from = -1; Array.from(list.children).forEach(function (d) { d.classList.remove("is-drag"); }); });
+
+        // ---------- actions ----------
+        async function run(btn, fn) {
+          if (!pages.length) return say("Pehle photo ya PDF chunein", true);
+          btn.classList.add("x-btn-busy");
+          try { await fn(); } catch (e) { console.error(e); say("Fail: " + err(e), true); }
+          btn.classList.remove("x-btn-busy");
+        }
+        function parse(s, n) {
+          var out = [];
+          s.split(",").forEach(function (t) {
+            var m = t.trim().match(/^(\d+)\s*(?:-\s*(\d+))?$/); if (!m) return;
+            var a = +m[1], b = m[2] ? +m[2] : a, z; if (a > b) { z = a; a = b; b = z; }
+            for (var i = a; i <= b; i++) if (i >= 1 && i <= n) out.push(i - 1);
+          });
+          return out;
+        }
+        $("pdfMerge").addEventListener("click", function () {
+          run(this, async function () { var b = await build(pages); dl(b, "merged.pdf"); say("merged.pdf taiyaar: " + pages.length + " page, " + kb(b) + " KB"); });
+        });
+        $("pdfSplit").addEventListener("click", function () {
+          run(this, async function () {
+            var idx = parse($("pdfRange").value, pages.length);
+            if (!idx.length) return say("Sahi page number likhein, jaise 1-3,5 (kul " + pages.length + " page)", true);
+            var b = await build(idx.map(function (i) { return pages[i]; })); dl(b, "split.pdf"); say("split.pdf taiyaar: " + idx.length + " page, " + kb(b) + " KB");
+          });
+        });
+        $("pdfShrink").addEventListener("click", function () {
+          run(this, async function () {
+            var t = Math.max(10, +$("pdfKB").value || 200) * 1024, best = null, d, q, a, b, DPI = [150, 120, 96, 72, 56, 40], Q = [0.8, 0.65, 0.5, 0.38, 0.28];
+            out: for (d = 0; d < DPI.length; d++) {
+              a = await rasters(DPI[d]);
+              for (q = 0; q < Q.length; q++) {
+                say("Koshish: " + DPI[d] + " DPI, quality " + Math.round(Q[q] * 100) + "%...");
+                b = await fromR(a, Q[q]); if (!best || b.length < best.length) best = b;
+                if (b.length <= t) break out;
+              }
+            }
+            dl(best, "compressed.pdf"); $("pdfKBOut").textContent = kb(best) + " KB"; $("pdfRes").hidden = false;
+            if (best.length <= t) say("compressed.pdf taiyaar: " + kb(best) + " KB (target " + t / 1024 + " KB)");
+            else say("Target tak nahi pahunch paaye. Sabse chhota: " + kb(best) + " KB", true);
+          });
         });
       })();
     </script>
