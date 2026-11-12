@@ -1404,6 +1404,8 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
               <button class="btn" type="button" id="ocCopy">Copy</button>
               <button class="btn" type="button" id="ocEdGo">Isi format me edit karein</button>
             </div>
+            <p class="fineprint"><strong>Word me naya saaf banayein:</strong> Word file kholkar text theek karein aur naya print nikaalein.</p>
+            <p class="x-status is-err" id="ocWarn" role="alert" hidden></p>
             <textarea class="x-ta" id="ocText" aria-label="Nikla hua text" spellcheck="false"></textarea>
           </div>
           <div class="x-ctrl" id="ocEd" hidden>
@@ -4089,31 +4091,113 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           if (!asked) try { lib = await L.PDFDocument.load(bytes); } catch (e) { console.warn(e); }
           return { pj: pj, lib: lib };
         }
-        function paras(d) {
-          var out = [];
-          (d.blocks || []).forEach(function (b) { (b.paragraphs || []).forEach(function (p) {
-            var t = (p.lines || []).map(function (l) { return l.text.trim(); }).filter(Boolean).join(" ");
-            if (t) out.push(t);
-          }); });
-          return out.length ? out : (d.text || "").split(/\n\s*\n/).map(function (t) { return t.replace(/\s*\n\s*/g, " ").trim(); }).filter(Boolean);
+        // ---------- page cleanup before OCR: turn, straighten, upscale, local threshold ----------
+        var LETTER = (function () { try { return new RegExp("[\\p{L}\\p{N}]", "u"); } catch (e) { return /[A-Za-z0-9\u0900-\u097F]/; } })();
+        function mid(a) { a = a.slice().sort(function (p, q) { return p - q; }); return a.length ? a[a.length >> 1] : 0; }
+        function eachLine(d, fn) { (d.blocks || []).forEach(function (b) { (b.paragraphs || []).forEach(function (p, pj) { (p.lines || []).forEach(function (l, lj) { fn(l, lj === 0); }); }); }); }
+        function gray(c) {
+          var d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data, n = c.width * c.height, g = new Uint8Array(n);
+          for (var i = 0, j = 0; i < n; i++, j += 4) g[i] = (d[j] * 77 + d[j + 1] * 150 + d[j + 2] * 29) >> 8;
+          return g;
         }
-        function lines(d) { // Tesseract lines (word boxes as fallback), in image pixels
-          var out = [];
-          function add(t, b) {
-            t = (t || "").replace(/\s+/g, " ").trim();
-            if (t && b && b.x1 > b.x0 && b.y1 > b.y0) out.push({ t: t, x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 });
+        function sauvola(g, W, H, r) { // 1 = ink; sliding column sums keep memory to O(width)
+          var out = new Uint8Array(W * H), cs = new Float64Array(W), cq = new Float64Array(W), K = 0.34, R = 128, x, y, i, v;
+          for (y = 0; y <= Math.min(r, H - 1); y++) for (x = 0, i = y * W; x < W; x++, i++) { v = g[i]; cs[x] += v; cq[x] += v * v; }
+          for (y = 0; y < H; y++) {
+            var rows = Math.min(H - 1, y + r) - Math.max(0, y - r) + 1, s = 0, q = 0;
+            for (x = 0; x <= Math.min(r, W - 1); x++) { s += cs[x]; q += cq[x]; }
+            for (x = 0, i = y * W; x < W; x++, i++) {
+              var n = (Math.min(W - 1, x + r) - Math.max(0, x - r) + 1) * rows, m = s / n, va = q / n - m * m, sd = va > 0 ? Math.sqrt(va) : 0;
+              out[i] = g[i] < 80 || g[i] < m * (1 + K * (sd / R - 1)) ? 1 : 0;
+              if (x + r + 1 < W) { s += cs[x + r + 1]; q += cq[x + r + 1]; }
+              if (x - r >= 0) { s -= cs[x - r]; q -= cq[x - r]; }
+            }
+            if (y + r + 1 < H) for (x = 0, i = (y + r + 1) * W; x < W; x++, i++) { v = g[i]; cs[x] += v; cq[x] += v * v; }
+            if (y - r >= 0) for (x = 0, i = (y - r) * W; x < W; x++, i++) { v = g[i]; cs[x] -= v; cq[x] -= v * v; }
           }
-          (d.blocks || []).forEach(function (b) { (b.paragraphs || []).forEach(function (p) { (p.lines || []).forEach(function (l) {
-            if (l.bbox && (l.text || "").trim()) add(l.text, l.bbox); else (l.words || []).forEach(function (w) { add(w.text, w.bbox); });
-          }); }); });
-          if (!out.length) (d.lines || []).forEach(function (l) { add(l.text, l.bbox); });
-          if (!out.length) (d.words || []).forEach(function (w) { add(w.text, w.bbox); });
+          return out;
+        }
+        function clean(src, k) { // scale by k, grayscale, Sauvola (31px window) → black text on white
+          var W = Math.max(1, Math.round(src.width * k)), H = Math.max(1, Math.round(src.height * k)), c = cnv(W, H), x = c.getContext("2d", { willReadFrequently: true });
+          x.fillStyle = "#fff"; x.fillRect(0, 0, W, H); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high"; x.drawImage(src, 0, 0, W, H);
+          var b = sauvola(gray(c), W, H, 15), im = x.createImageData(W, H), d = im.data;
+          for (var i = 0, j = 0; i < b.length; i++, j += 4) { d[j] = d[j + 1] = d[j + 2] = b[i] ? 0 : 255; d[j + 3] = 255; }
+          x.putImageData(im, 0, 0);
+          return { c: c, b: b, W: W, H: H };
+        }
+        function turn(src, a) { // quarter turns swap sides; a small tilt keeps the size
+          var sw = Math.abs(Math.round(a / (Math.PI / 2))) % 2 === 1, W = sw ? src.height : src.width, H = sw ? src.width : src.height, c = cnv(W, H), x = c.getContext("2d");
+          x.fillStyle = "#fff"; x.fillRect(0, 0, W, H); x.translate(W / 2, H / 2); x.rotate(a); x.drawImage(src, -src.width / 2, -src.height / 2);
+          return c;
+        }
+        function skew(c) { // degrees (±10) that make text rows level, by projection profile
+          var W = c.width, H = c.height, d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, W, H).data, xs = [], ys = [], i, n = W * H;
+          for (i = 0; i < n; i++) if (d[i * 4] < 128) { xs.push(i % W); ys.push((i / W) | 0); }
+          if (xs.length < 200) return 0;
+          var st = Math.max(1, Math.floor(xs.length / 40000)), off = Math.ceil(W * 0.2) + 2, len = H + 2 * off;
+          function score(deg) {
+            var a = deg * Math.PI / 180, sn = Math.sin(a), co = Math.cos(a), h = new Float64Array(len), s = 0;
+            for (var j = 0; j < xs.length; j += st) h[(xs[j] * sn + ys[j] * co + off) | 0]++;
+            for (j = 1; j < len; j++) { var df = h[j] - h[j - 1]; s += df * df; }
+            return s;
+          }
+          var best = 0, bs = score(0), a, v;
+          for (a = -10; a <= 10; a += 0.5) { v = score(a); if (v > bs) { bs = v; best = a; } }
+          var c0 = best;
+          for (a = c0 - 0.5; a <= c0 + 0.5; a += 0.1) { v = score(a); if (v > bs) { bs = v; best = a; } }
+          return best;
+        }
+        async function prep(w, c) { // → { c: upright canvas, k: upscale, moved }
+          await w.setParameters({ tessedit_pageseg_mode: "6", user_defined_dpi: "300" });
+          var ps = Math.min(1, 1600 / Math.max(c.width, c.height)), pr = clean(c, ps).c, rot = 0;
+          var probe = async function (img) { return (await w.recognize(img, {}, { text: true, blocks: true })).data; };
+          var d = await probe(pr), qs = [2, 1, 3];
+          if (d.confidence < 70) for (var j = 0; j < qs.length; j++) {
+            var t = turn(pr, qs[j] * Math.PI / 2), e = await probe(t); t.width = t.height = 0;
+            if (e.confidence > d.confidence + 5) { d = e; rot = qs[j]; }
+            if (d.confidence >= 70) break;
+          }
+          var hs = [];
+          eachLine(d, function (l) { (l.words || []).forEach(function (wd) { if (wd.confidence >= 50 && (wd.text || "").trim().length >= 2 && wd.bbox) hs.push(wd.bbox.y1 - wd.bbox.y0); }); });
+          var th = hs.length >= 3 ? mid(hs) / ps : 0, pt = rot ? turn(pr, rot * Math.PI / 2) : pr, tilt = skew(pt);
+          pt.width = pt.height = 0; pr.width = pr.height = 0;
+          var c2 = rot ? turn(c, rot * Math.PI / 2) : c;
+          if (Math.abs(tilt) >= 0.3) { var c3 = turn(c2, tilt * Math.PI / 180); if (c2 !== c) c2.width = c2.height = 0; c2 = c3; }
+          var k = th ? 30 / th : 1;
+          if (c2.width < 2000) k = Math.max(k, 2);
+          k = Math.min(Math.max(k, 1), 4000 / Math.max(c2.width, c2.height));
+          return { c: c2, k: k, moved: c2 !== c };
+        }
+        function build(d, fin, k) { // kept lines in upright-page pixels; big gaps become segments
+          var out = [], W = fin.W, B = fin.b;
+          eachLine(d, function (l, first) {
+            var ws = (l.words || []).filter(function (x) { return x.confidence >= 30 && x.bbox && (x.text || "").trim(); });
+            if (!ws.length) return;
+            var chars = 0, wsum = 0;
+            ws.forEach(function (x) { chars += x.text.trim().length; wsum += x.bbox.x1 - x.bbox.x0; });
+            var cw = wsum / Math.max(1, chars), segs = [{ x: ws[0].bbox.x0, t: ws[0].text.trim() }];
+            for (var i = 1; i < ws.length; i++) {
+              var gap = ws[i].bbox.x0 - ws[i - 1].bbox.x1;
+              if (gap > Math.max(3 * cw, W * 0.03)) segs.push({ x: ws[i].bbox.x0, t: ws[i].text.trim() });
+              else segs[segs.length - 1].t += " " + ws[i].text.trim();
+            }
+            var t = segs.map(function (s) { return s.t; }).join(" "), cmp = t.replace(/\s+/g, "");
+            if (!LETTER.test(cmp) || (cmp.length <= 2 && !/[\d\u0900-\u097F]/.test(cmp))) return;
+            var x0 = Infinity, y0 = Infinity, x1 = 0, y1 = 0;
+            ws.forEach(function (x) { x0 = Math.min(x0, x.bbox.x0); y0 = Math.min(y0, x.bbox.y0); x1 = Math.max(x1, x.bbox.x1); y1 = Math.max(y1, x.bbox.y1); });
+            var ink = 0, runs = 0; // mean horizontal stroke width, for bold
+            for (var y = y0; y < y1; y += 2) { var prev = 0; for (var x = x0; x < x1; x++) { var v = B[y * W + x]; if (v) { ink++; if (!prev) runs++; } prev = v; } }
+            out.push({ t: t, txt: segs.map(function (s) { return s.t; }).join("    "), x: x0 / k, y: y0 / k, w: (x1 - x0) / k, h: (y1 - y0) / k,
+              segs: segs.map(function (s) { return s.x / k; }), sw: runs ? ink / runs / Math.max(1, y1 - y0) : 0, np: first && out.length > 0 });
+          });
+          var m = mid(out.map(function (l) { return l.sw; }));
+          out.forEach(function (l) { l.bold = out.length >= 3 ? l.sw > m * 1.3 : l.sw > 0.13; });
           return out;
         }
         // ---------- OCR run ----------
         $("ocGo").addEventListener("click", async function () {
           if (busy || !files.length) return;
-          busy = true; this.disabled = true; $("ocOut").hidden = true; pages = []; bar(0); edReset();
+          busy = true; this.disabled = true; $("ocOut").hidden = true; $("ocWarn").hidden = true; pages = []; bar(0); edReset();
           try {
             var L = await load(PL, "PDFLib"), src = [], i;
             for (i = 0; i < files.length; i++) {
@@ -4126,25 +4210,44 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
             pn = src.length; say("OCR shuru ho raha hai...");
             var w = await worker();
             for (i = 0; i < pn; i++) {
-              var s = src[i], pg = {}, c;
+              var s = src[i], pg = {}, c, keep = false;
               pi = i; bar(i / pn); say("Page " + (i + 1) + "/" + pn + " padh raha hai...");
               if (s.pj) {
                 var p = await s.pj.getPage(s.n + 1), vp = p.getViewport({ scale: 300 / 72 }); c = cnv(vp.width, vp.height);
                 var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
                 await p.render({ canvasContext: x, viewport: vp }).promise;
-                pg.w = vp.width * 72 / 300; pg.h = vp.height * 72 / 300;
-                if (s.lib && !s.lib.getPage(s.n).getRotation().angle) { pg.lib = s.lib; pg.n = s.n; } else pg.img = await blob(c, "image/jpeg");
-              } else {
-                c = await imgC(s.f); pg.w = c.width * 72 / 300; pg.h = c.height * 72 / 300;
-                pg.png = s.f.type === "image/png"; pg.img = await blob(c, pg.png ? "image/png" : "image/jpeg");
+                keep = !!(s.lib && !s.lib.getPage(s.n).getRotation().angle);
+              } else c = await imgC(s.f);
+              say("Page " + (i + 1) + "/" + pn + ": seedha aur saaf kar raha hai...");
+              var P = await prep(w, c), c2 = P.c, fin = clean(c2, P.k);
+              if (c2 !== c) c.width = c.height = 0;
+              say("Page " + (i + 1) + "/" + pn + " padh raha hai...");
+              var OP = { pdfTitle: "ocr", pdfTextOnly: true }, OO = { text: true, blocks: true, pdf: true };
+              await w.setParameters({ tessedit_pageseg_mode: "6", user_defined_dpi: String(Math.round(Math.min(2400, 300 * P.k))) });
+              var d = (await w.recognize(fin.c, OP, OO)).data;
+              if (d.confidence < 60) {
+                await w.setParameters({ tessedit_pageseg_mode: "4" });
+                var d4 = (await w.recognize(fin.c, OP, OO)).data;
+                if (d4.confidence > d.confidence) d = d4;
               }
-              var d = (await w.recognize(c, { pdfTitle: "ocr", pdfTextOnly: true }, { text: true, blocks: true, pdf: true })).data;
-              pg.pdf = d.pdf ? new Uint8Array(d.pdf) : null; pg.paras = paras(d); pg.text = (d.text || "").trim();
-              pg.isPdf = !!s.pj; pg.ew = c.width; pg.eh = c.height; pg.lines = lines(d);
-              pg.ed = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", 0.92); });
-              pages.push(pg); c.width = c.height = 0;
+              pg.w = c2.width * 72 / 300; pg.h = c2.height * 72 / 300;
+              if (s.pj) { if (keep && !P.moved) { pg.lib = s.lib; pg.n = s.n; } else pg.img = await blob(c2, "image/jpeg"); }
+              else { pg.png = s.f.type === "image/png"; pg.img = await blob(c2, pg.png ? "image/png" : "image/jpeg"); }
+              pg.pdf = d.pdf ? new Uint8Array(d.pdf) : null; pg.conf = d.confidence || 0;
+              pg.items = build(d, fin, P.k);
+              pg.text = pg.items.map(function (l) { return (l.np ? "\n" : "") + l.txt; }).join("\n");
+              pg.lines = pg.items.map(function (l) { return { t: l.t, x: l.x, y: l.y, w: l.w, h: l.h }; });
+              pg.isPdf = !!s.pj; pg.ew = c2.width; pg.eh = c2.height;
+              pg.ed = await new Promise(function (ok) { c2.toBlob(ok, "image/jpeg", 0.92); });
+              pages.push(pg); fin.c.width = fin.c.height = 0; fin.b = null; c2.width = c2.height = 0;
             }
             $("ocText").value = pages.map(function (p, k) { return (pn > 1 ? "--- Page " + (k + 1) + " ---\n" : "") + p.text; }).join("\n\n");
+            var low = [];
+            pages.forEach(function (p, k) { if (p.conf < 60) low.push(k + 1); });
+            if (low.length) {
+              $("ocWarn").textContent = "Scan saaf nahi hai, text galat aa sakta hai. Seedhi, saaf photo/scan daalein." + (pn > 1 ? " (Page " + low.join(", ") + ")" : "");
+              $("ocWarn").hidden = false;
+            }
             $("ocOut").hidden = false; bar(1); say("Ho gaya: " + pn + " page padhe gaye. Neeche se download karein.");
           } catch (e) { console.error(e); say("OCR nahi hua: " + ((e && e.message) || e), true); }
           finally { busy = false; this.disabled = false; }
@@ -4172,15 +4275,86 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         }); });
         $("ocDocx").addEventListener("click", function () { run(this, async function () {
           say("Word file ban rahi hai...");
-          var D = await load(DX, "docx"), kids = [];
-          pages.forEach(function (pg, i) {
-            (pg.paras.length ? pg.paras : [""]).forEach(function (t, j) {
-              kids.push(new D.Paragraph({ pageBreakBefore: i > 0 && j === 0, spacing: { after: 120 },
-                children: [new D.TextRun(/[\u0900-\u097F]/.test(t) ? { text: t, font: "Nirmala UI" } : { text: t })] }));
+          var D = await load(DX, "docx"), kids = [], simple = 0;
+          var PW = 11906, PH = 16838, MG = 720, CW = PW - 2 * MG; // A4 and 0.5in margins, in twips
+          var NO = { style: D.BorderStyle.NONE, size: 0, color: "FFFFFF" };
+          function runs(t, pt, b) { // Hindi in Nirmala UI, the rest in Arial
+            return t.split(/([\u0900-\u097F\u200c\u200d](?:[\u0900-\u097F\u200c\u200d\s]*[\u0900-\u097F\u200c\u200d])?)/).filter(Boolean).map(function (s) {
+              return new D.TextRun({ text: s, font: /[\u0900-\u097F]/.test(s) ? "Nirmala UI" : "Arial", size: pt * 2, bold: !!b });
             });
+          }
+          function para(t, pt, b, ind, before, pb) {
+            var o = { spacing: { before: Math.round(before || 0), after: 0 }, children: runs(t, pt, b) };
+            if (ind > 0) o.indent = { left: Math.round(ind) };
+            if (pb) o.pageBreakBefore = true;
+            return new D.Paragraph(o);
+          }
+          function plain(text, pb) { // when lines were added or removed: keep the edited text, simple layout
+            var gap = 0, first = true;
+            text.split("\n").forEach(function (l) {
+              if (!l.trim()) { gap = 160; return; }
+              kids.push(para(l.replace(/\s+$/, ""), 11, false, 0, first ? 0 : gap, pb && first)); gap = 0; first = false;
+            });
+            if (first) kids.push(para("", 11, false, 0, 0, pb));
+          }
+          function laid(pg, ed, pb) {
+            var its = pg.items.map(function (it, j) { return { it: it, e: ed[j] }; }).sort(function (a, b) { return (a.it.y + a.it.h / 2) - (b.it.y + b.it.h / 2); });
+            var bands = [];
+            its.forEach(function (o) {
+              var cy = o.it.y + o.it.h / 2, bd = bands[bands.length - 1];
+              if (bd && Math.abs(cy - bd.cy) < 0.5 * Math.min(o.it.h, bd.h)) bd.a.push(o);
+              else bands.push({ cy: cy, h: o.it.h, a: [o] });
+            });
+            var minX = Math.min.apply(null, pg.items.map(function (l) { return l.x; })), maxR = Math.max.apply(null, pg.items.map(function (l) { return l.x + l.w; }));
+            var s = Math.min(595.28 / pg.ew, (CW / 20) / Math.max(1, maxR - minX)), prev = null, first = true; // pt per pixel
+            bands.forEach(function (bd) {
+              bd.a.sort(function (p, q) { return p.it.x - q.it.x; });
+              var top = Math.min.apply(null, bd.a.map(function (o) { return o.it.y; })), bot = Math.max.apply(null, bd.a.map(function (o) { return o.it.y + o.it.h; }));
+              var segs = [];
+              bd.a.forEach(function (o) {
+                var pt = Math.max(7, Math.min(48, Math.round(o.it.h * s))), parts = o.e.split(/\s{3,}|\t+/).map(function (t) { return t.trim(); }).filter(Boolean);
+                parts.forEach(function (t, j) {
+                  var x = parts.length === o.it.segs.length ? o.it.segs[j] : o.it.x + o.it.w * j / parts.length;
+                  segs.push({ t: t, x: x, pt: pt, b: o.it.bold });
+                });
+              });
+              if (!segs.length) return;
+              var lh = Math.max.apply(null, segs.map(function (g) { return g.pt; })), gp = prev === null ? 0 : (top - prev) * s;
+              var before = gp > lh * 0.4 ? Math.min(gp, 200) * 20 : 0; prev = bot;
+              var tw = function (x) { return Math.max(0, Math.min(CW - 400, (x - minX) * s * 20)); };
+              if (segs.length >= 2 && segs.length <= 4) {
+                var st = segs.map(function (g) { return tw(g.x); }), wd = [], ok = true;
+                for (var j = 0; j < st.length; j++) {
+                  var a = j === 0 ? 0 : st[j], z = j === st.length - 1 ? CW : st[j + 1];
+                  wd.push(Math.round(z - a)); if (z - a < 400) ok = false;
+                }
+                if (!ok) { st = segs.map(function (g, j) { return j === 0 ? Math.min(st[0], CW / segs.length - 400) : 0; }); wd = segs.map(function () { return Math.floor(CW / segs.length); }); }
+                if (pb && first) kids.push(para("", 1, false, 0, 0, true));
+                kids.push(new D.Table({
+                  width: { size: CW, type: D.WidthType.DXA }, columnWidths: wd, layout: D.TableLayoutType.FIXED,
+                  borders: { top: NO, bottom: NO, left: NO, right: NO, insideHorizontal: NO, insideVertical: NO },
+                  rows: [new D.TableRow({ children: segs.map(function (g, j) {
+                    return new D.TableCell({ width: { size: wd[j], type: D.WidthType.DXA }, borders: { top: NO, bottom: NO, left: NO, right: NO },
+                      margins: { top: 0, bottom: 0, left: 0, right: 80 }, children: [para(g.t, g.pt, g.b, j === 0 ? st[0] : 0, before)] });
+                  }) })]
+                }));
+              } else kids.push(para(segs.map(function (g) { return g.t; }).join("    "), segs[0].pt, segs[0].b, tw(segs[0].x), before, pb && first));
+              first = false;
+            });
+            if (first) kids.push(para("", 11, false, 0, 0, pb));
+          }
+          var v = $("ocText").value.replace(/\r/g, ""), chunks = null;
+          if (pages.length === 1) chunks = [v];
+          else { var sp = v.split(/^--- Page \d+ ---[ \t]*$/m); if (sp.length - 1 === pages.length) chunks = sp.slice(1); }
+          if (!chunks) { plain(v, false); simple = pages.length; }
+          else pages.forEach(function (pg, i) {
+            var ed = chunks[i].split("\n").filter(function (l) { return l.trim(); });
+            if (pg.items && pg.items.length && ed.length === pg.items.length) laid(pg, ed, i > 0);
+            else { plain(chunks[i].replace(/^\n+|\n+$/g, ""), i > 0); if (ed.length) simple++; }
           });
-          dl(await D.Packer.toBlob(new D.Document({ sections: [{ children: kids }] })), "ocr.docx");
-          say("ocr.docx download ho raha hai.");
+          if (kids[kids.length - 1] instanceof D.Table) kids.push(para("", 1, false, 0, 0, false));
+          dl(await D.Packer.toBlob(new D.Document({ sections: [{ properties: { page: { size: { width: PW, height: PH }, margin: { top: MG, bottom: MG, left: MG, right: MG } } }, children: kids }] })), "ocr.docx");
+          say(simple ? "ocr.docx download ho raha hai. Lines jodne/hataane se " + simple + " page ka format simple rakha gaya." : "ocr.docx download ho raha hai.");
         }); });
         $("ocTxt").addEventListener("click", function () { dl("\ufeff" + $("ocText").value, "ocr.txt", "text/plain;charset=utf-8"); });
         $("ocCopy").addEventListener("click", function () {
