@@ -2526,7 +2526,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         function msg(t, bad) { var e = $("docStatus"); e.textContent = t; e.classList.toggle("is-err", !!bad); }
         function tick() { return new Promise(function (r) { setTimeout(r, 0); }); }
         // OCR-based type / orientation / Aadhaar pairing. Returns {type, pair, rot} or null.
-        var TS_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js", tsP = null, aadMap = {}, aadN = 0;
+        var TS_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js", tsP = null, aadMap = {}, aadN = 0;
         function loadTs() {
           if (tsP) return tsP;
           tsP = new Promise(function (ok, bad) {
@@ -4025,7 +4025,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
       // ---------- OCR / Editable: searchable PDF, Word, TXT ----------
       (function () {
         var $ = function (i) { return document.getElementById(i); };
-        var TS = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js", PL = "https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js", DX = "https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js";
+        var TS = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js", PL = "https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js", DX = "https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js";
         var files = [], lang = "hin+eng", wP = null, wL = "", pwK = null, pages = [], pi = 0, pn = 1, busy = false;
         document.querySelectorAll("[data-tab]").forEach(function (b) {
           b.addEventListener("click", function () { document.body.classList.toggle("x-ocr", b.dataset.tab === "ocr"); });
@@ -4095,6 +4095,50 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         var LETTER = (function () { try { return new RegExp("[\\p{L}\\p{N}]", "u"); } catch (e) { return /[A-Za-z0-9\u0900-\u097F]/; } })();
         function mid(a) { a = a.slice().sort(function (p, q) { return p - q; }); return a.length ? a[a.length >> 1] : 0; }
         function eachLine(d, fn) { (d.blocks || []).forEach(function (b) { (b.paragraphs || []).forEach(function (p, pj) { (p.lines || []).forEach(function (l, lj) { fn(l, lj === 0); }); }); }); }
+        function fromTsv(d) { // TSV → blocks/paragraphs/lines/words, same shape Tesseract gives with {blocks:true}
+          var blocks = [], bm = {}, pm = {}, lm = {}, cs = [];
+          String(d.tsv || "").split("\n").forEach(function (row) {
+            var c = row.split("\t"); if (c.length < 12) return;
+            var lv = +c[0]; if (lv !== 4 && lv !== 5) return;
+            var bk = c[2], pk = bk + "." + c[3], lk = pk + "." + c[4];
+            var x0 = +c[6], y0 = +c[7], bb = { x0: x0, y0: y0, x1: x0 + (+c[8]), y1: y0 + (+c[9]) };
+            if (!bm[bk]) { bm[bk] = { paragraphs: [], bbox: bb, text: "" }; blocks.push(bm[bk]); }
+            if (!pm[pk]) { pm[pk] = { lines: [], bbox: bb, text: "" }; bm[bk].paragraphs.push(pm[pk]); }
+            if (!lm[lk]) { lm[lk] = { words: [], bbox: bb, text: "", confidence: 0 }; pm[pk].lines.push(lm[lk]); }
+            if (lv === 4) { lm[lk].bbox = bb; return; }
+            var cf = parseFloat(c[10]), t = c.slice(11).join("\t");
+            if (!t.trim()) return;
+            if (cf >= 0) cs.push(cf);
+            lm[lk].words.push({ text: t, confidence: cf, bbox: bb });
+          });
+          blocks.forEach(function (b) { b.paragraphs.forEach(function (p) { p.lines.forEach(function (l) {
+            l.text = l.words.map(function (x) { return x.text; }).join(" ");
+            var v = l.words.filter(function (x) { return x.confidence >= 0; });
+            l.confidence = v.length ? v.reduce(function (a, x) { return a + x.confidence; }, 0) / v.length : 0;
+          }); }); });
+          d.blocks = blocks;
+          d.confidence = cs.length ? cs.reduce(function (a, x) { return a + x; }, 0) / cs.length : 0;
+          return d;
+        }
+        async function safeRec(w, img, opts, out) { // recognize with fallbacks; out.pdf marks the main read, else a probe
+          var main = !!(out && out.pdf), d = null, TT = { text: true, tsv: true };
+          try { d = (await w.recognize(img, opts, out)).data; } catch (e1) {
+            console.warn("OCR retry (text+tsv):", e1);
+            try { d = (await w.recognize(img, opts, TT)).data; } catch (e2) {
+              console.warn("OCR retry (psm 3):", e2);
+              try {
+                await w.setParameters({ tessedit_pageseg_mode: "3" });
+                d = (await w.recognize(img, opts, TT)).data;
+              } catch (e3) { console.warn(e3); d = null; }
+              try { await w.setParameters({ tessedit_pageseg_mode: "6" }); } catch (e4) {}
+            }
+          }
+          if (d && !d.blocks && d.tsv) fromTsv(d);
+          if (d && !d.blocks) d.blocks = [];
+          if (d && d.confidence == null) d.confidence = 0;
+          if (!d) { if (main) throw new Error("Is page ka text nahi padh paaye"); return { confidence: 0, text: "", blocks: [] }; }
+          return d;
+        }
         function gray(c) {
           var d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data, n = c.width * c.height, g = new Uint8Array(n);
           for (var i = 0, j = 0; i < n; i++, j += 4) g[i] = (d[j] * 77 + d[j + 1] * 150 + d[j + 2] * 29) >> 8;
@@ -4150,7 +4194,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         async function prep(w, c) { // → { c: upright canvas, k: upscale, moved }
           await w.setParameters({ tessedit_pageseg_mode: "6", user_defined_dpi: "300" });
           var ps = Math.min(1, 1600 / Math.max(c.width, c.height)), pr = clean(c, ps).c, rot = 0;
-          var probe = async function (img) { return (await w.recognize(img, {}, { text: true, blocks: true })).data; };
+          var probe = function (img) { return safeRec(w, img, {}, { text: true, blocks: true }); };
           var d = await probe(pr), qs = [2, 1, 3];
           if (d.confidence < 70) for (var j = 0; j < qs.length; j++) {
             var t = turn(pr, qs[j] * Math.PI / 2), e = await probe(t); t.width = t.height = 0;
@@ -4224,11 +4268,12 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
               say("Page " + (i + 1) + "/" + pn + " padh raha hai...");
               var OP = { pdfTitle: "ocr", pdfTextOnly: true }, OO = { text: true, blocks: true, pdf: true };
               await w.setParameters({ tessedit_pageseg_mode: "6", user_defined_dpi: String(Math.round(Math.min(2400, 300 * P.k))) });
-              var d = (await w.recognize(fin.c, OP, OO)).data;
+              var d = await safeRec(w, fin.c, OP, OO);
               if (d.confidence < 60) {
                 await w.setParameters({ tessedit_pageseg_mode: "4" });
-                var d4 = (await w.recognize(fin.c, OP, OO)).data;
-                if (d4.confidence > d.confidence) d = d4;
+                var d4 = null;
+                try { d4 = await safeRec(w, fin.c, OP, OO); } catch (e4) { console.warn(e4); }
+                if (d4 && d4.confidence > d.confidence) d = d4;
               }
               pg.w = c2.width * 72 / 300; pg.h = c2.height * 72 / 300;
               if (s.pj) { if (keep && !P.moved) { pg.lib = s.lib; pg.n = s.n; } else pg.img = await blob(c2, "image/jpeg"); }
@@ -4260,7 +4305,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         }
         $("ocPdf").addEventListener("click", function () { run(this, async function () {
           say("Searchable PDF ban raha hai...");
-          var L = await load(PL, "PDFLib"), out = await L.PDFDocument.create(), miss = 0;
+          var L = await load(PL, "PDFLib"), out = await L.PDFDocument.create(), miss = 0, F;
           for (var i = 0; i < pages.length; i++) {
             var pg = pages[i], p, b;
             if (pg.lib) { p = out.addPage((await out.copyPages(pg.lib, [pg.n]))[0]); b = p.getCropBox(); }
@@ -4268,7 +4313,20 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
               p = out.addPage([pg.w, pg.h]); b = { x: 0, y: 0, width: pg.w, height: pg.h };
               p.drawImage(pg.png ? await out.embedPng(pg.img) : await out.embedJpg(pg.img), b);
             }
-            if (pg.pdf) p.drawPage((await out.embedPdf(pg.pdf))[0], b); else miss++;
+            var ok = false;
+            if (pg.pdf) try { p.drawPage((await out.embedPdf(pg.pdf))[0], b); ok = true; } catch (e) { console.warn(e); }
+            if (!ok && pg.lines && pg.lines.length) try { // no Tesseract PDF: invisible text from the line boxes
+              if (F === undefined) { F = null; try { F = await tFonts(L, out); } catch (e) { console.warn(e); } }
+              if (F) {
+                var inv = !!(L.setTextRenderingMode && L.TextRenderingMode), kk = b.width / pg.ew;
+                F.op = inv ? undefined : 0;
+                if (inv) p.pushOperators(L.pushGraphicsState(), L.setTextRenderingMode(L.TextRenderingMode.Invisible));
+                pg.lines.forEach(function (ln) { if ((ln.t || "").trim()) try { tLine(p, F, ln, kk, b.x, b.y + b.height, 0); } catch (e) { console.warn(e); } });
+                if (inv) p.pushOperators(L.popGraphicsState());
+                ok = true;
+              }
+            } catch (e) { console.warn(e); }
+            if (!ok) miss++;
           }
           dl(await out.save(), "ocr.pdf", "application/pdf");
           say(miss ? "ocr.pdf bana, par " + miss + " page par text layer nahi lag paayi." : "ocr.pdf download ho raha hai.");
