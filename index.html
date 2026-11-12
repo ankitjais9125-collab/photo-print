@@ -4516,7 +4516,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           e.setAttribute("role", "textbox"); e.setAttribute("aria-label", "Text box"); e.textContent = b.t; e._b = b; pos(e);
           stage.appendChild(e); return e;
         }
-        function build() {
+        function edBuild() {
           stage.querySelectorAll(".x-eb").forEach(function (e) { e.remove(); });
           st(ED.i).boxes.forEach(function (b) { if (!b.del) mk(b); });
           ED.sel = null; undoBtn();
@@ -4533,7 +4533,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           blurBox(); say("Page " + (i + 1) + " khul raha hai...");
           ED.i = i; ED.orig = await origC(i); ED.ox = ED.orig.getContext("2d", { willReadFrequently: true });
           cv.width = pages[i].ew; cv.height = pages[i].eh;
-          build(); scale(); redraw(); say("Page " + (i + 1) + ": kisi line par tap karke edit karein.");
+          edBuild(); scale(); redraw(); say("Page " + (i + 1) + ": kisi line par tap karke edit karein.");
         }
         $("ocEdGo").addEventListener("click", async function () {
           if (!pages.length) return;
@@ -4614,7 +4614,7 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
         $("ocEdUndo").addEventListener("click", function () {
           blurBox();
           var P = st(ED.i); if (!P.undo.length) return;
-          P.boxes = JSON.parse(P.undo.pop()); build(); redraw(); say("Pichla badlav hata diya.");
+          P.boxes = JSON.parse(P.undo.pop()); edBuild(); redraw(); say("Pichla badlav hata diya.");
         });
         // ---------- edited downloads ----------
         function cblob(c, type) { return new Promise(function (ok) { c.toBlob(ok, type, 0.92); }); }
