@@ -889,6 +889,18 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
       body.x-ocr .main > :not(.hero):not(.x-tabs):not(#ocr) { display: none !important; }
       body:not(.x-ocr) #ocr { display: none !important; }
       .x-ta { width: 100%; min-height: 280px; padding: 12px; font: var(--type-body); color: var(--text-primary); background: var(--fill-primary-on); border: 1px solid var(--stroke-primary); border-radius: var(--r-s); resize: vertical; }
+      .x-edbar { position: sticky; top: 64px; z-index: 5; padding: 8px; border-radius: var(--r-s); background: var(--fill-primary-on); border: 1px solid var(--stroke-secondary); }
+      .x-edbar select, .x-edbar input[type="color"] { min-height: var(--tap); padding: 0 8px; font: var(--type-small); color: var(--text-primary); background: var(--fill-primary-on); border: 1px solid var(--stroke-primary); border-radius: var(--r-s); }
+      .x-edbar input[type="color"] { width: var(--tap); padding: 4px; }
+      .x-edbar .x-opt { justify-content: center; min-width: var(--tap); }
+      .x-edwrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--stroke-primary); border-radius: var(--r-s); background: var(--fill-tertiary); }
+      .x-edpg { position: relative; width: 100%; min-width: 560px; line-height: 0; }
+      .x-edpg.is-add { cursor: crosshair; }
+      .x-edpg canvas { width: 100%; height: auto; display: block; background: #fff; }
+      .x-eb { position: absolute; margin: 0; padding: 0; white-space: pre; overflow: visible; color: transparent; background: transparent; caret-color: #000; outline: 1px dashed rgba(30, 120, 255, 0.35); font-family: "Nirmala UI", Mangal, "Noto Sans Devanagari", Arial, sans-serif; font-size: calc(var(--s) * var(--k, 1) * 1px); line-height: calc(var(--lh) * var(--k, 1) * 1px); cursor: text; -webkit-user-select: text; user-select: text; }
+      .x-eb.is-nw { width: auto !important; min-width: 1em; }
+      .x-eb.is-sel { outline: 2px solid rgba(30, 120, 255, 0.9); z-index: 2; }
+      .x-eb.is-on { z-index: 3; }
       .x-rso { max-width: 100%; max-height: 320px; height: auto; display: block; border: 1px solid var(--stroke-primary); border-radius: var(--r-s); background: #fff; }
     </style>
   </head>
@@ -1390,8 +1402,29 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
               <button class="btn x-primary" type="button" id="ocDocx">Word (.docx)</button>
               <button class="btn" type="button" id="ocTxt">TXT</button>
               <button class="btn" type="button" id="ocCopy">Copy</button>
+              <button class="btn" type="button" id="ocEdGo">Isi format me edit karein</button>
             </div>
             <textarea class="x-ta" id="ocText" aria-label="Nikla hua text" spellcheck="false"></textarea>
+          </div>
+          <div class="x-ctrl" id="ocEd" hidden>
+            <h3>Isi format me edit karein</h3>
+            <p class="x-status">Kisi bhi line par tap karke likhein. Enter dabane par box band ho jaata hai.</p>
+            <div class="x-opts x-edbar" id="ocEdBar" role="toolbar" aria-label="Edit tools">
+              <select id="ocEdPg" aria-label="Page chunein"></select>
+              <button class="x-opt" type="button" id="ocEdAdd" aria-pressed="false">Text jodein</button>
+              <button class="x-opt" type="button" id="ocEdDel">Box hatayein</button>
+              <button class="x-opt" type="button" id="ocEdMinus" aria-label="Font chhota">A−</button>
+              <button class="x-opt" type="button" id="ocEdPlus" aria-label="Font bada">A+</button>
+              <input type="color" id="ocEdCol" value="#000000" aria-label="Text ka rang" />
+              <button class="x-opt" type="button" id="ocEdUndo" disabled>Undo</button>
+            </div>
+            <div class="x-edwrap"><div class="x-edpg" id="ocEdPage"><canvas id="ocEdCv" aria-label="Page ka preview"></canvas></div></div>
+            <div class="links">
+              <button class="btn x-primary" type="button" id="ocEdPdf">Edited PDF</button>
+              <button class="btn" type="button" id="ocEdJpg">Edited JPG</button>
+              <button class="btn" type="button" id="ocEdPng">Edited PNG</button>
+            </div>
+            <p class="fineprint">Original jaisa dikhne ki koshish hoti hai, par font 100% same nahi hoga. Saaf scan best rehta hai.</p>
           </div>
           <p class="fineprint">Dhyan dein: table aur layout Word mein bilkul same nahi aayega. Saaf, seedha scan ho to sabse accha result milta hai. Searchable PDF mein page waisa hi dikhta hai, bas text select aur search ho jaata hai.</p>
         </section>
@@ -4064,10 +4097,23 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           }); });
           return out.length ? out : (d.text || "").split(/\n\s*\n/).map(function (t) { return t.replace(/\s*\n\s*/g, " ").trim(); }).filter(Boolean);
         }
+        function lines(d) { // Tesseract lines (word boxes as fallback), in image pixels
+          var out = [];
+          function add(t, b) {
+            t = (t || "").replace(/\s+/g, " ").trim();
+            if (t && b && b.x1 > b.x0 && b.y1 > b.y0) out.push({ t: t, x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 });
+          }
+          (d.blocks || []).forEach(function (b) { (b.paragraphs || []).forEach(function (p) { (p.lines || []).forEach(function (l) {
+            if (l.bbox && (l.text || "").trim()) add(l.text, l.bbox); else (l.words || []).forEach(function (w) { add(w.text, w.bbox); });
+          }); }); });
+          if (!out.length) (d.lines || []).forEach(function (l) { add(l.text, l.bbox); });
+          if (!out.length) (d.words || []).forEach(function (w) { add(w.text, w.bbox); });
+          return out;
+        }
         // ---------- OCR run ----------
         $("ocGo").addEventListener("click", async function () {
           if (busy || !files.length) return;
-          busy = true; this.disabled = true; $("ocOut").hidden = true; pages = []; bar(0);
+          busy = true; this.disabled = true; $("ocOut").hidden = true; pages = []; bar(0); edReset();
           try {
             var L = await load(PL, "PDFLib"), src = [], i;
             for (i = 0; i < files.length; i++) {
@@ -4094,6 +4140,8 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
               }
               var d = (await w.recognize(c, { pdfTitle: "ocr", pdfTextOnly: true }, { text: true, blocks: true, pdf: true })).data;
               pg.pdf = d.pdf ? new Uint8Array(d.pdf) : null; pg.paras = paras(d); pg.text = (d.text || "").trim();
+              pg.isPdf = !!s.pj; pg.ew = c.width; pg.eh = c.height; pg.lines = lines(d);
+              pg.ed = await new Promise(function (ok) { c.toBlob(ok, "image/jpeg", 0.92); });
               pages.push(pg); c.width = c.height = 0;
             }
             $("ocText").value = pages.map(function (p, k) { return (pn > 1 ? "--- Page " + (k + 1) + " ---\n" : "") + p.text; }).join("\n\n");
@@ -4140,6 +4188,267 @@ tr.is-highlight > :last-child { box-shadow: 12px 0 var(--fill-tertiary); }
           (navigator.clipboard ? navigator.clipboard.writeText(t.value) : Promise.reject()).catch(function () { t.select(); document.execCommand("copy"); })
             .then(function () { say("Text copy ho gaya."); });
         });
+        // ---------- Isi format me edit karein (layout editor) ----------
+        var FONT = '"Nirmala UI", Mangal, "Noto Sans Devanagari", Arial, sans-serif';
+        var FK = "https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js";
+        var FD = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-devanagari@latest/";
+        var ED = { i: 0, ps: [], orig: null, ox: null, add: false, sel: null, pre: null, preT: "", col: "#000000", fb: null };
+        var stage = $("ocEdPage"), cv = $("ocEdCv");
+        function edReset() {
+          ED.ps = []; ED.i = 0; ED.sel = null; ED.orig = ED.ox = null; ED.add = false;
+          $("ocEd").hidden = true; stage.querySelectorAll(".x-eb").forEach(function (e) { e.remove(); });
+          cv.width = cv.height = 0;
+        }
+        function st(i) {
+          if (!ED.ps[i]) ED.ps[i] = { undo: [], boxes: (pages[i].lines || []).map(function (l) {
+            return { x: l.x, y: l.y, w: l.w, h: l.h, o: l.t, t: l.t, s: l.h * 0.8 };
+          }) };
+          return ED.ps[i];
+        }
+        async function origC(i) {
+          var pg = pages[i], u = URL.createObjectURL(pg.ed), im = new Image(); im.src = u;
+          try { await im.decode(); } finally { URL.revokeObjectURL(u); }
+          var c = cnv(pg.ew, pg.eh), x = c.getContext("2d", { willReadFrequently: true });
+          x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height); return c;
+        }
+        function hex(r, g, b) { return "#" + [r, g, b].map(function (v) { return ("0" + Math.round(v).toString(16)).slice(-2); }).join(""); }
+        function med(a) { a.sort(function (p, q) { return p - q; }); return a.length ? a[a.length >> 1] : 255; }
+        function lum(r, g, b) { return 0.299 * r + 0.587 * g + 0.114 * b; }
+        function sample(b, x) { // background = median of a ring around the box; ink = median of the darkest pixels inside
+          if (b.bg) return;
+          var W = x.canvas.width, H = x.canvas.height, pad = Math.max(3, Math.round(b.h * 0.2));
+          var x0 = Math.max(0, Math.floor(b.x - pad)), y0 = Math.max(0, Math.floor(b.y - pad));
+          var x1 = Math.min(W, Math.ceil(b.x + b.w + pad)), y1 = Math.min(H, Math.ceil(b.y + b.h + pad));
+          if (x1 <= x0 || y1 <= y0) { b.bg = "#ffffff"; b.ink = "#000000"; if (!b.c) b.c = b.ink; return; }
+          var d = x.getImageData(x0, y0, x1 - x0, y1 - y0).data, rw = x1 - x0;
+          var step = Math.max(1, Math.floor(Math.sqrt(rw * (y1 - y0) / 60000))), R = [], G = [], B = [], ins = [];
+          for (var yy = y0; yy < y1; yy += step) for (var xx = x0; xx < x1; xx += step) {
+            var k = ((yy - y0) * rw + (xx - x0)) * 4, r = d[k], g = d[k + 1], bb = d[k + 2];
+            var inBox = xx >= b.x && xx < b.x + b.w && yy >= b.y && yy < b.y + b.h;
+            var near = xx >= b.x - 1 && xx < b.x + b.w + 1 && yy >= b.y - 1 && yy < b.y + b.h + 1;
+            if (inBox) ins.push([lum(r, g, bb), r, g, bb]); else if (!near) { R.push(r); G.push(g); B.push(bb); }
+          }
+          var bg = [med(R), med(G), med(B)];
+          b.bg = hex(bg[0], bg[1], bg[2]);
+          if (!ins.length) { b.ink = "#000000"; if (!b.c) b.c = b.ink; return; }
+          ins.sort(function (p, q) { return p[0] - q[0]; });
+          var dk = ins.slice(0, Math.max(1, Math.floor(ins.length * 0.15)));
+          var ink = [1, 2, 3].map(function (j) { return med(dk.map(function (p) { return p[j]; })); });
+          b.ink = hex(ink[0], ink[1], ink[2]);
+          if (!b.c) b.c = b.ink;
+          if (b.bold == null && !b.nw) {
+            var mid = (lum(bg[0], bg[1], bg[2]) + lum(ink[0], ink[1], ink[2])) / 2, n = 0;
+            ins.forEach(function (p) { if (p[0] < mid) n++; });
+            b.bold = n / ins.length > 0.34;
+          }
+        }
+        function fnt(b, s) { return (b.bold ? "bold " : "") + Math.max(1, s).toFixed(1) + "px " + FONT; }
+        function paint(x, boxes) {
+          boxes.forEach(function (b) {
+            if (!b.nw && (b.del || b.ch)) {
+              var e = Math.max(1, Math.round(b.h * 0.08));
+              x.fillStyle = b.bg || "#ffffff"; x.fillRect(b.x - e, b.y - e, b.w + 2 * e, b.h + 2 * e);
+            }
+          });
+          boxes.forEach(function (b) {
+            if (b.del || !(b.ch || b.nw) || !b.t.trim()) return;
+            var s = b.s; x.font = fnt(b, s);
+            var m = x.measureText(b.t).width;
+            if (b.nw) b.w = Math.max(m, b.s);
+            else if (m > b.w && m > 0) { s = s * b.w / m; x.font = fnt(b, s); }
+            x.fillStyle = b.c || "#000000"; x.textBaseline = "middle"; x.textAlign = "left";
+            x.fillText(b.t, b.x, b.y + b.h / 2);
+          });
+        }
+        async function flat(i) {
+          var P = st(i), c = await origC(i), x = c.getContext("2d", { willReadFrequently: true });
+          P.boxes.forEach(function (b) { if (b.ch || b.del || b.nw) sample(b, x); });
+          paint(x, P.boxes); return c;
+        }
+        function redraw() {
+          if (!ED.orig) return;
+          var x = cv.getContext("2d"); x.drawImage(ED.orig, 0, 0); paint(x, st(ED.i).boxes);
+          stage.querySelectorAll(".x-eb").forEach(pos);
+        }
+        function scale() { if (pages[ED.i] && stage.clientWidth) stage.style.setProperty("--k", stage.clientWidth / pages[ED.i].ew); }
+        if (window.ResizeObserver) new ResizeObserver(scale).observe(stage); else window.addEventListener("resize", scale);
+        function pos(e) {
+          var b = e._b, P = pages[ED.i];
+          e.style.left = b.x / P.ew * 100 + "%"; e.style.top = b.y / P.eh * 100 + "%";
+          e.style.width = b.w / P.ew * 100 + "%"; e.style.height = b.h / P.eh * 100 + "%";
+          e.style.setProperty("--s", b.s); e.style.setProperty("--lh", b.h); e.style.fontWeight = b.bold ? "bold" : "";
+        }
+        function mk(b) {
+          var e = document.createElement("div");
+          e.className = "x-eb" + (b.nw ? " is-nw" : ""); e.contentEditable = "true"; e.spellcheck = false;
+          e.setAttribute("role", "textbox"); e.setAttribute("aria-label", "Text box"); e.textContent = b.t; e._b = b; pos(e);
+          stage.appendChild(e); return e;
+        }
+        function build() {
+          stage.querySelectorAll(".x-eb").forEach(function (e) { e.remove(); });
+          st(ED.i).boxes.forEach(function (b) { if (!b.del) mk(b); });
+          ED.sel = null; undoBtn();
+        }
+        function snap() { return JSON.stringify(st(ED.i).boxes); }
+        function push(s) { var U = st(ED.i).undo; U.push(s); if (U.length > 20) U.shift(); undoBtn(); }
+        function undoBtn() { $("ocEdUndo").disabled = !(ED.ps[ED.i] && ED.ps[ED.i].undo.length); }
+        function pick(e) {
+          if (ED.sel && ED.sel !== e) ED.sel.classList.remove("is-sel");
+          ED.sel = e; if (e) { e.classList.add("is-sel"); if (e._b.c) $("ocEdCol").value = e._b.c; }
+        }
+        function blurBox() { var a = document.activeElement; if (a && a.classList && a.classList.contains("x-eb")) a.blur(); }
+        async function open(i) {
+          blurBox(); say("Page " + (i + 1) + " khul raha hai...");
+          ED.i = i; ED.orig = await origC(i); ED.ox = ED.orig.getContext("2d", { willReadFrequently: true });
+          cv.width = pages[i].ew; cv.height = pages[i].eh;
+          build(); scale(); redraw(); say("Page " + (i + 1) + ": kisi line par tap karke edit karein.");
+        }
+        $("ocEdGo").addEventListener("click", async function () {
+          if (!pages.length) return;
+          var sel = $("ocEdPg"); sel.innerHTML = "";
+          pages.forEach(function (p, k) { var o = document.createElement("option"); o.value = k; o.textContent = "Page " + (k + 1); sel.appendChild(o); });
+          sel.hidden = pages.length < 2; sel.value = ED.i;
+          $("ocEd").hidden = false;
+          try { await open(ED.i < pages.length ? ED.i : 0); } catch (e) { console.error(e); say("Page nahi khula: " + ((e && e.message) || e), true); }
+          $("ocEd").scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        $("ocEdPg").addEventListener("change", function () { open(+this.value).catch(function (e) { console.error(e); say("Page nahi khula.", true); }); });
+        stage.addEventListener("focusin", function (ev) {
+          var e = ev.target.closest(".x-eb"); if (!e) return;
+          var b = e._b; pick(e); ED.pre = snap(); ED.preT = b.t;
+          if (ED.ox) sample(b, ED.ox);
+          e.classList.add("is-on"); e.style.color = b.c || b.ink || "#000000"; e.style.background = b.bg || "#ffffff";
+        });
+        stage.addEventListener("focusout", function (ev) {
+          var e = ev.target.closest(".x-eb"); if (!e || !e.isConnected) return;
+          var b = e._b; if (b.del) return;
+          b.t = e.textContent.replace(/\s*\n\s*/g, " ");
+          e.classList.remove("is-on"); e.style.color = e.style.background = "";
+          if (b.t !== ED.preT) { push(ED.pre); if (!b.nw) b.ch = true; redraw(); }
+        });
+        stage.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter" && ev.target.closest(".x-eb")) { ev.preventDefault(); ev.target.blur(); }
+        });
+        stage.addEventListener("paste", function (ev) {
+          if (!ev.target.closest(".x-eb")) return;
+          ev.preventDefault();
+          var t = ((ev.clipboardData || window.clipboardData).getData("text") || "").replace(/\s+/g, " ");
+          document.execCommand("insertText", false, t);
+        });
+        stage.addEventListener("click", function (ev) {
+          if (ev.target.closest(".x-eb")) return;
+          if (!ED.add) { blurBox(); pick(null); return; }
+          var P = pages[ED.i], r = cv.getBoundingClientRect(); if (!r.width) return;
+          var px = (ev.clientX - r.left) / r.width * P.ew, py = (ev.clientY - r.top) / r.height * P.eh;
+          var hs = st(ED.i).boxes.filter(function (b) { return !b.nw; }).map(function (b) { return b.h; });
+          var h = hs.length ? med(hs) : P.ew * 0.025, s = h * 0.8;
+          push(snap());
+          var b = { x: px, y: py - h / 2, w: s * 4, h: h, o: "", t: "Naya text", s: s, nw: true, c: $("ocEdCol").value, bold: false };
+          st(ED.i).boxes.push(b);
+          ED.add = false; $("ocEdAdd").setAttribute("aria-pressed", "false"); stage.classList.remove("is-add");
+          redraw();
+          var e = mk(b); e.focus();
+          var rg = document.createRange(), sl = window.getSelection(); rg.selectNodeContents(e); sl.removeAllRanges(); sl.addRange(rg);
+        });
+        $("ocEdBar").addEventListener("mousedown", function (ev) { if (ev.target.closest("button")) ev.preventDefault(); });
+        $("ocEdAdd").addEventListener("click", function () {
+          ED.add = !ED.add; this.setAttribute("aria-pressed", String(ED.add)); stage.classList.toggle("is-add", ED.add);
+          if (ED.add) say("Page par jahan text chahiye wahan tap karein.");
+        });
+        function need() { if (ED.sel && ED.sel.isConnected) return ED.sel; say("Pehle koi box chunein (us par tap karein)."); return null; }
+        $("ocEdDel").addEventListener("click", function () {
+          var e = need(); if (!e) return;
+          blurBox(); push(snap());
+          var b = e._b, B = st(ED.i).boxes;
+          if (b.nw) B.splice(B.indexOf(b), 1); else { b.del = true; if (ED.ox) sample(b, ED.ox); }
+          e.remove(); ED.sel = null; redraw(); say("Box hata diya.");
+        });
+        function size(f) {
+          var e = need(); if (!e) return;
+          var b = e._b; push(snap());
+          b.s = Math.max(4, b.s * f); if (b.nw) b.h = b.s / 0.8; else { b.ch = true; if (ED.ox) sample(b, ED.ox); }
+          redraw();
+        }
+        $("ocEdPlus").addEventListener("click", function () { size(1.12); });
+        $("ocEdMinus").addEventListener("click", function () { size(1 / 1.12); });
+        $("ocEdCol").addEventListener("change", function () {
+          ED.col = this.value;
+          var e = ED.sel && ED.sel.isConnected ? ED.sel : null; if (!e) return;
+          var b = e._b; push(snap()); if (ED.ox) sample(b, ED.ox);
+          b.c = this.value; if (!b.nw) b.ch = true;
+          if (e.classList.contains("is-on")) e.style.color = b.c;
+          redraw();
+        });
+        $("ocEdUndo").addEventListener("click", function () {
+          blurBox();
+          var P = st(ED.i); if (!P.undo.length) return;
+          P.boxes = JSON.parse(P.undo.pop()); build(); redraw(); say("Pichla badlav hata diya.");
+        });
+        // ---------- edited downloads ----------
+        function cblob(c, type) { return new Promise(function (ok) { c.toBlob(ok, type, 0.92); }); }
+        async function img(type, ext) {
+          blurBox(); say("Image ban rahi hai...");
+          var c = await flat(ED.i), b = await cblob(c, type); c.width = c.height = 0;
+          dl(b, "edited-page-" + (ED.i + 1) + "." + ext); say("edited-page-" + (ED.i + 1) + "." + ext + " download ho raha hai.");
+        }
+        $("ocEdJpg").addEventListener("click", function () { run(this, function () { return img("image/jpeg", "jpg"); }); });
+        $("ocEdPng").addEventListener("click", function () { run(this, function () { return img("image/png", "png"); }); });
+        async function tFonts(L, out) { // fonts for the invisible search text
+          if (!ED.fb) {
+            var K = await load(FK, "fontkit");
+            var get = function (u) { return fetch(u).then(function (r) { if (!r.ok) throw new Error("font"); return r.arrayBuffer(); }); };
+            var a = await Promise.all([get(FD + "devanagari-400-normal.ttf"), get(FD + "latin-400-normal.ttf").catch(function () { return null; })]);
+            ED.fb = { K: K, d: a[0], l: a[1] };
+          }
+          out.registerFontkit(ED.fb.K);
+          var d = await out.embedFont(ED.fb.d, { subset: true });
+          var l = ED.fb.l ? await out.embedFont(ED.fb.l, { subset: true }) : await out.embedFont(L.StandardFonts.Helvetica);
+          return { d: d, l: l, std: !ED.fb.l };
+        }
+        var DEV = /[\u0900-\u097F\u1CD0-\u1CFF\uA8E0-\uA8FF\u200C\u200D]+|[^\u0900-\u097F\u1CD0-\u1CFF\uA8E0-\uA8FF\u200C\u200D]+/g;
+        function tLine(p, F, b, k, ox, PH, oy) {
+          var runs = (b.t.match(DEV) || []).map(function (r) {
+            var dev = /[\u0900-\u097F]/.test(r);
+            if (!dev && F.std) r = r.replace(/[^\x20-\x7E\xA0-\xFF]/g, "?");
+            return { t: r, f: dev ? F.d : F.l };
+          }).filter(function (r) { return r.t; });
+          var w1 = runs.reduce(function (a, r) { return a + r.f.widthOfTextAtSize(r.t, 1); }, 0);
+          if (!w1) return;
+          var sz = Math.max(1, Math.min(b.h * k * 0.85, b.w * k / w1)), x = ox + b.x * k, y = PH - oy - (b.y + b.h * 0.78) * k;
+          runs.forEach(function (r) {
+            var o = { x: x, y: y, size: sz, font: r.f }; if (F.op === 0) o.opacity = 0;
+            p.drawText(r.t, o); x += r.f.widthOfTextAtSize(r.t, sz);
+          });
+        }
+        $("ocEdPdf").addEventListener("click", function () { run(this, async function () {
+          blurBox(); say("Edited PDF ban raha hai...");
+          var L = await load(PL, "PDFLib"), out = await L.PDFDocument.create(), F = null, miss = false;
+          try { F = await tFonts(L, out); } catch (e) { console.warn(e); miss = true; }
+          for (var i = 0; i < pages.length; i++) {
+            say("Edited PDF: page " + (i + 1) + "/" + pages.length + "...");
+            var pg = pages[i], c = await flat(i), im = await out.embedJpg(await blob(c, "image/jpeg")), PW, PH, k, ox = 0, oy = 0;
+            c.width = c.height = 0;
+            if (pg.isPdf) { PW = pg.w; PH = pg.h; k = PW / pg.ew; }
+            else {
+              var land = pg.ew > pg.eh; PW = land ? 841.89 : 595.28; PH = land ? 595.28 : 841.89;
+              k = Math.min(PW / pg.ew, PH / pg.eh); ox = (PW - pg.ew * k) / 2; oy = (PH - pg.eh * k) / 2;
+            }
+            var p = out.addPage([PW, PH]);
+            p.drawImage(im, { x: ox, y: PH - oy - pg.eh * k, width: pg.ew * k, height: pg.eh * k });
+            if (F) {
+              var inv = !!(L.setTextRenderingMode && L.TextRenderingMode);
+              F.op = inv ? undefined : 0;
+              if (inv) p.pushOperators(L.pushGraphicsState(), L.setTextRenderingMode(L.TextRenderingMode.Invisible));
+              st(i).boxes.forEach(function (b) {
+                if (b.del || !b.t.trim()) return;
+                try { tLine(p, F, b, k, ox, PH, oy); } catch (e) { console.warn(e); miss = true; }
+              });
+              if (inv) p.pushOperators(L.popGraphicsState());
+            }
+          }
+          dl(await out.save(), "edited.pdf", "application/pdf");
+          say(miss ? "edited.pdf bana, par search wali text layer poori nahi lag paayi." : "edited.pdf download ho raha hai.");
+        }); });
       })();
     </script>
   </body>
